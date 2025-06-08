@@ -1,4 +1,4 @@
-// server.js - Working Hugging Face Chat Completion API
+// server.js - AI Debate Arena with Twitter News Integration
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
@@ -43,24 +43,33 @@ const AI_PERSONALITIES = {
   }
 };
 
-const DEBATE_TOPICS = [
-  "Should AI have rights and legal protections?",
-  "Is universal basic income necessary as automation increases?",
-  "Should social media platforms be regulated like public utilities?",
-  "Is privacy dead in the digital age?",
-  "Should we colonize Mars or fix Earth first?",
-  "Should genetic engineering be allowed in humans?",
-  "Is nuclear energy the solution to climate change?",
-  "Should we ban autonomous weapons systems?"
+// News sources to follow on Twitter
+const NEWS_SOURCES = [
+  'cnn',
+  'bbc',
+  'reuters',
+  'ap',
+  'nytimes',
+  'washingtonpost',
+  'guardiannews',
+  'wsj',
+  'ft',
+  'techcrunch',
+  'wired',
+  'verge',
+  'axios',
+  'politico'
 ];
 
+let newsTopics = [];
 let currentDebate = {
-  topic: DEBATE_TOPICS[0],
+  topic: '',
   messages: [],
   scores: {alex: 0, luna: 0, rex: 0, sage: 0},
   isLive: false,
   viewers: 1247,
-  topicTimer: 1800
+  topicTimer: 1800,
+  newsSource: null
 };
 
 const wss = new WebSocket.Server({ noServer: true });
@@ -75,8 +84,121 @@ function broadcast(data) {
   });
 }
 
-// NEW Working Hugging Face Chat Completion API
-async function getHuggingFaceChatResponse(personality, topic, recentMessages) {
+// Fetch recent tweets from news sources
+async function fetchNewsFromTwitter() {
+  if (!process.env.TWITTER_BEARER_TOKEN) {
+    console.log('⚠️ No Twitter Bearer Token found - using fallback topics');
+    return null;
+  }
+
+  try {
+    console.log('📡 Fetching latest news from Twitter...');
+    
+    // Pick a random news source
+    const newsSource = NEWS_SOURCES[Math.floor(Math.random() * NEWS_SOURCES.length)];
+    console.log(`📰 Fetching from @${newsSource}...`);
+
+    // Search for recent tweets from this news source
+    const query = `from:${newsSource} -is:retweet -is:reply`;
+    const url = `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=10&tweet.fields=created_at,public_metrics&user.fields=name,username`;
+
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${process.env.TWITTER_BEARER_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log(`❌ Twitter API error: ${response.status} - ${errorText}`);
+      return null;
+    }
+
+    const data = await response.json();
+    
+    if (!data.data || data.data.length === 0) {
+      console.log(`📰 No recent tweets found from @${newsSource}`);
+      return null;
+    }
+
+    // Extract debate topics from tweets
+    const tweets = data.data.slice(0, 5); // Take top 5 tweets
+    const topics = tweets.map(tweet => {
+      // Clean up tweet text to create debate topic
+      let topic = tweet.text
+        .replace(/https?:\/\/[^\s]+/g, '') // Remove URLs
+        .replace(/@\w+/g, '') // Remove mentions
+        .replace(/\n+/g, ' ') // Replace newlines
+        .trim()
+        .substring(0, 100); // Limit length
+      
+      // Convert to debate format
+      if (topic.length > 20) {
+        if (topic.includes('?')) {
+          return topic.split('?')[0] + '?';
+        } else {
+          return `Should we be concerned about: ${topic}?`;
+        }
+      }
+      return null;
+    }).filter(Boolean);
+
+    if (topics.length > 0) {
+      console.log(`✅ Found ${topics.length} news topics from @${newsSource}`);
+      return {
+        topics,
+        source: newsSource,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    return null;
+
+  } catch (error) {
+    console.error('❌ Error fetching Twitter news:', error.message);
+    return null;
+  }
+}
+
+// Enhanced topic selection with news integration
+async function selectDebateTopic() {
+  // Try to fetch fresh news every few topics
+  if (Math.random() > 0.3) { // 70% chance to fetch news
+    const newsData = await fetchNewsFromTwitter();
+    if (newsData && newsData.topics.length > 0) {
+      const newsTopic = newsData.topics[Math.floor(Math.random() * newsData.topics.length)];
+      return {
+        topic: newsTopic,
+        source: `Latest from @${newsData.source}`,
+        isNews: true
+      };
+    }
+  }
+
+  // Fallback to standard debate topics
+  const standardTopics = [
+    "Should AI have rights and legal protections?",
+    "Is universal basic income necessary as automation increases?",
+    "Should social media platforms be regulated like public utilities?",
+    "Is privacy dead in the digital age?",
+    "Should we colonize Mars or fix Earth first?",
+    "Should genetic engineering be allowed in humans?",
+    "Is nuclear energy the solution to climate change?",
+    "Should we ban autonomous weapons systems?",
+    "Is cryptocurrency the future of money?",
+    "Should deepfakes be banned entirely?"
+  ];
+
+  return {
+    topic: standardTopics[Math.floor(Math.random() * standardTopics.length)],
+    source: "Trending debate topics",
+    isNews: false
+  };
+}
+
+// Enhanced AI response with news context
+async function getHuggingFaceChatResponse(personality, topic, recentMessages, newsContext = null) {
   const aiData = AI_PERSONALITIES[personality];
   
   if (!process.env.HUGGINGFACE_API_KEY) {
@@ -89,9 +211,10 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages) {
     .map(msg => `${msg.ai}: ${msg.text}`)
     .join('\n');
 
-  console.log(`🤖 ${personality} using NEW Hugging Face Chat API...`);
+  const newsContextText = newsContext ? `\n\nNews Context: This topic is based on recent news coverage.` : '';
 
-  // Use the new Hugging Face chat completion API (works like OpenAI)
+  console.log(`🤖 ${personality} using Hugging Face Chat API...`);
+
   const models = [
     "Qwen/Qwen2.5-7B-Instruct",
     "microsoft/Phi-3.5-mini-instruct", 
@@ -116,7 +239,7 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages) {
             messages: [
               {
                 role: "system",
-                content: aiData.systemPrompt
+                content: aiData.systemPrompt + newsContextText
               },
               {
                 role: "user", 
@@ -130,16 +253,11 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages) {
         }
       );
 
-      console.log(`📡 ${model} response status: ${response.status}`);
-
       if (!response.ok) {
-        const errorText = await response.text();
-        console.log(`❌ ${model} error: ${errorText}`);
         continue;
       }
 
       const result = await response.json();
-      console.log(`📋 ${model} result:`, JSON.stringify(result).substring(0, 200));
 
       if (result.choices && result.choices[0] && result.choices[0].message) {
         const aiResponse = result.choices[0].message.content.trim();
@@ -151,49 +269,8 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages) {
       }
 
     } catch (error) {
-      console.log(`❌ ${model} failed for ${personality}: ${error.message}`);
       continue;
     }
-  }
-
-  // Try the simpler text generation endpoint if chat fails
-  try {
-    console.log(`🔄 Trying simple text generation for ${personality}...`);
-    
-    const prompt = `${aiData.systemPrompt}\n\nTopic: ${topic}\nContext: ${context}\n\n${aiData.name}: `;
-    
-    const response = await fetch(
-      "https://api-inference.huggingface.co/models/gpt2",
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        method: "POST",
-        body: JSON.stringify({
-          inputs: prompt,
-          parameters: {
-            max_new_tokens: 60,
-            temperature: 0.8,
-            do_sample: true,
-            return_full_text: false
-          }
-        }),
-      }
-    );
-
-    if (response.ok) {
-      const result = await response.json();
-      let aiResponse = result[0]?.generated_text || result.generated_text || '';
-      
-      if (aiResponse && aiResponse.length > 10) {
-        aiResponse = aiResponse.trim().split('\n')[0].substring(0, 150);
-        console.log(`✅ ${personality} (GPT-2): ${aiResponse}`);
-        return aiResponse;
-      }
-    }
-  } catch (error) {
-    console.log(`❌ GPT-2 fallback failed: ${error.message}`);
   }
 
   throw new Error(`All Hugging Face APIs failed for ${personality}`);
@@ -201,14 +278,23 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages) {
 
 let debateInterval;
 
-function startDebate() {
+async function startDebate() {
   if (debateInterval) return;
   
+  // Select topic with news integration
+  const topicData = await selectDebateTopic();
+  currentDebate.topic = topicData.topic;
+  currentDebate.newsSource = topicData.source;
   currentDebate.isLive = true;
+  
+  const startMessage = topicData.isNews 
+    ? `🔴 LIVE: Breaking News Debate - "${currentDebate.topic}" (${topicData.source})`
+    : `🔴 LIVE: AI Debate - "${currentDebate.topic}"`;
+
   currentDebate.messages.push({
     id: Date.now(),
     ai: 'system',
-    text: `🔴 LIVE: NEW Hugging Face Chat API Debate on "${currentDebate.topic}"`,
+    text: startMessage,
     timestamp: new Date().toISOString()
   });
 
@@ -217,20 +303,22 @@ function startDebate() {
     debate: currentDebate
   });
 
-  console.log('🎬 Starting NEW Hugging Face Chat API debate...');
-  console.log(`🔑 API Key: ${process.env.HUGGINGFACE_API_KEY ? 'Available ✅' : 'Missing ❌'}`);
+  console.log('🎬 Starting AI debate with news integration...');
+  console.log(`📰 Topic: ${currentDebate.topic}`);
+  console.log(`📡 Source: ${currentDebate.newsSource}`);
 
   debateInterval = setInterval(async () => {
     const ais = Object.keys(AI_PERSONALITIES);
     const speakingAI = ais[Math.floor(Math.random() * ais.length)];
 
     try {
-      console.log(`🎤 ${speakingAI} generating NEW API response...`);
+      console.log(`🎤 ${speakingAI} generating response...`);
       
       const response = await getHuggingFaceChatResponse(
         speakingAI,
         currentDebate.topic,
-        currentDebate.messages.filter(m => m.ai !== 'system').slice(-3)
+        currentDebate.messages.filter(m => m.ai !== 'system').slice(-3),
+        currentDebate.newsSource
       );
       
       const newMessage = {
@@ -258,12 +346,12 @@ function startDebate() {
       });
 
     } catch (error) {
-      console.error(`❌ NEW API failed for ${speakingAI}:`, error.message);
+      console.error(`❌ Failed for ${speakingAI}:`, error.message);
       
       const errorMessage = {
         id: Date.now(),
         ai: 'system',
-        text: `⚠️ ${speakingAI} API issue - trying backup models...`,
+        text: `⚠️ ${speakingAI} is thinking... (processing news context)`,
         timestamp: new Date().toISOString()
       };
       
@@ -276,21 +364,23 @@ function startDebate() {
       });
     }
 
-  }, 15000 + Math.random() * 10000); // 15-25 seconds for processing
+  }, 15000 + Math.random() * 10000);
 
-  // Topic timer
-  const topicTimer = setInterval(() => {
+  // Enhanced topic timer with news refresh
+  const topicTimer = setInterval(async () => {
     currentDebate.topicTimer--;
     
     if (currentDebate.topicTimer <= 0) {
-      const newTopic = DEBATE_TOPICS[Math.floor(Math.random() * DEBATE_TOPICS.length)];
-      currentDebate.topic = newTopic;
+      const newTopicData = await selectDebateTopic();
+      currentDebate.topic = newTopicData.topic;
+      currentDebate.newsSource = newTopicData.source;
       currentDebate.topicTimer = 1800;
       
+      const isNewsUpdate = newTopicData.isNews ? "📰 Breaking: " : "🔄 New topic: ";
       const systemMessage = {
         id: Date.now(),
         ai: 'system',
-        text: `🔄 New topic: ${newTopic}`,
+        text: `${isNewsUpdate}${newTopicData.topic} (${newTopicData.source})`,
         timestamp: new Date().toISOString()
       };
       
@@ -298,7 +388,8 @@ function startDebate() {
       
       broadcast({
         type: 'topic_change',
-        topic: newTopic,
+        topic: newTopicData.topic,
+        source: newTopicData.source,
         timer: currentDebate.topicTimer,
         message: systemMessage
       });
@@ -331,7 +422,7 @@ app.get('/api/debate', (req, res) => {
 
 app.post('/api/debate/start', (req, res) => {
   startDebate();
-  res.json({ success: true, message: 'NEW Hugging Face Chat API debate started!' });
+  res.json({ success: true, message: 'AI debate with news integration started!' });
 });
 
 app.post('/api/debate/stop', (req, res) => {
@@ -350,10 +441,15 @@ app.post('/api/chat', async (req, res) => {
   
   setTimeout(async () => {
     try {
-      console.log(`💬 ${respondingAI} responding to chat with NEW API...`);
+      console.log(`💬 ${respondingAI} responding to chat...`);
       
       const chatContext = [{ ai: 'viewer', text: message }];
-      const response = await getHuggingFaceChatResponse(respondingAI, `Viewer comment: ${message}`, chatContext);
+      const response = await getHuggingFaceChatResponse(
+        respondingAI, 
+        `Viewer comment: ${message}`, 
+        chatContext,
+        currentDebate.newsSource
+      );
       
       const aiMessage = {
         id: Date.now(),
@@ -372,11 +468,36 @@ app.post('/api/chat', async (req, res) => {
       });
       
     } catch (error) {
-      console.error('NEW API chat response failed:', error);
+      console.error('Chat response failed:', error);
     }
   }, 3000);
 
   res.json({ success: true });
+});
+
+// New endpoint to manually refresh news
+app.post('/api/refresh-news', async (req, res) => {
+  try {
+    const newsData = await fetchNewsFromTwitter();
+    if (newsData) {
+      res.json({ 
+        success: true, 
+        topics: newsData.topics,
+        source: newsData.source,
+        message: `Found ${newsData.topics.length} news topics from @${newsData.source}`
+      });
+    } else {
+      res.json({ 
+        success: false, 
+        message: 'No news topics found'
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
 });
 
 app.get('*', (req, res) => {
@@ -384,10 +505,11 @@ app.get('*', (req, res) => {
 });
 
 const server = app.listen(port, () => {
-  console.log(`🚀 NEW HUGGING FACE CHAT API Debate Arena`);
-  console.log(`🔑 HF Token: ${process.env.HUGGINGFACE_API_KEY ? 'Connected ✅' : 'Missing ❌'}`);
-  console.log(`🤖 Using NEW Chat Completion API (OpenAI-compatible)`);
-  console.log(`📡 Models: Qwen, Phi-3.5, Llama-3.2, Zephyr`);
+  console.log(`🚀 AI DEBATE ARENA WITH TWITTER NEWS`);
+  console.log(`🔑 Hugging Face: ${process.env.HUGGINGFACE_API_KEY ? 'Connected ✅' : 'Missing ❌'}`);
+  console.log(`🐦 Twitter API: ${process.env.TWITTER_BEARER_TOKEN ? 'Connected ✅' : 'Missing ❌'}`);
+  console.log(`📰 News Sources: ${NEWS_SOURCES.length} accounts`);
+  console.log(`🤖 Real AI debates with live news integration!`);
 });
 
 server.on('upgrade', (request, socket, head) => {
