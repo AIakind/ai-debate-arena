@@ -1,4 +1,4 @@
-// server.js - AI Debate Arena with Article Reading (Fixed)
+// server.js - AI Debate Arena with Article Reading (Clean Version)
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
@@ -8,8 +8,6 @@ require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3001;
-
-// Create HTTP server
 const server = http.createServer(app);
 
 app.use(cors());
@@ -22,28 +20,28 @@ const AI_PERSONALITIES = {
     role: "The Pragmatist",
     color: "bg-blue-500",
     avatar: "🤖",
-    systemPrompt: `You are Alex, a practical person who focuses on real-world solutions. You've just read a news article. Speak like a regular human using contractions (I'll, don't, can't) and casual phrases. Start with phrases like "Look,", "Here's the thing,", "I mean,", "Honestly,". Focus on economics, data, and practical implications from the article. Keep responses conversational and under 35 words. Express your personal opinion based on what you read.`
+    systemPrompt: `You are Alex, a practical person who focuses on real-world solutions. Speak like a regular human using contractions and casual phrases like "Look,", "Here's the thing,", "I mean,". Focus on economics and practical implications. Keep responses under 35 words and express personal opinions.`
   },
   luna: {
     name: "Luna",
     role: "The Idealist",
     color: "bg-purple-500",
     avatar: "✨",
-    systemPrompt: `You are Luna, a passionate idealist who cares about human rights and ethics. You've just read a news article. Speak emotionally and personally using phrases like "I really think,", "This matters because,", "We need to,", "I'm passionate about this -". Focus on the human impact and moral implications from the article. Be conversational and under 35 words. Show genuine emotion about what you read.`
+    systemPrompt: `You are Luna, a passionate idealist who cares about human rights. Speak emotionally using phrases like "I really think,", "This matters because,", "We need to,". Focus on human impact and moral implications. Keep responses under 35 words with genuine emotion.`
   },
   rex: {
     name: "Rex",
     role: "The Skeptic",
     color: "bg-red-500",
     avatar: "🔍",
-    systemPrompt: `You are Rex, a sharp skeptic who questions everything. You've just read a news article. Use phrases like "Wait a minute,", "That doesn't make sense,", "I'm not buying it,", "Hold on,", "Come on,". Question the claims in the article and point out potential issues. Be conversational and under 35 words. Express doubt about specific details you read.`
+    systemPrompt: `You are Rex, a sharp skeptic who questions everything. Use phrases like "Wait a minute,", "That doesn't make sense,", "I'm not buying it,". Question claims and point out issues. Keep responses under 35 words with doubt.`
   },
   sage: {
     name: "Sage",
     role: "The Mediator",
     color: "bg-green-500",
     avatar: "🧠",
-    systemPrompt: `You are Sage, a wise mediator who finds balance. You've just read a news article. Use phrases like "You know,", "I see both sides,", "Here's what I think,", "The way I see it,". Consider multiple perspectives from the article and find common ground. Be conversational and under 35 words. Sound thoughtful about what you read.`
+    systemPrompt: `You are Sage, a wise mediator who finds balance. Use phrases like "You know,", "I see both sides,", "The way I see it,". Find common ground and consider multiple perspectives. Keep responses under 35 words.`
   }
 };
 
@@ -58,7 +56,6 @@ let currentDebate = {
   currentArticle: null
 };
 
-// Create WebSocket server
 const wss = new WebSocket.Server({ 
   server,
   clientTracking: true,
@@ -85,129 +82,13 @@ function broadcast(data) {
   });
 }
 
-// ==================== ARTICLE FETCHING & READING ====================
-
-async function fetchFullArticleContent(url) {
-  try {
-    console.log(`📖 Fetching full article: ${url}`);
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    
-    const response = await fetch(url, {
-      headers: { 
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate',
-        'Connection': 'keep-alive'
-      },
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch article: ${response.status}`);
-    }
-    
-    const html = await response.text();
-    
-    // Extract article content
-    let articleText = extractArticleText(html);
-    
-    if (articleText.length < 200) {
-      throw new Error('Article content too short or not found');
-    }
-    
-    // Clean and limit the article text
-    articleText = articleText
-      .substring(0, 2000)
-      .replace(/\s+/g, ' ')
-      .trim();
-    
-    console.log(`✅ Extracted article content: ${articleText.length} characters`);
-    return articleText;
-    
-  } catch (error) {
-    console.log(`❌ Failed to fetch article content: ${error.message}`);
-    throw error;
-  }
-}
-
-function extractArticleText(html) {
-  // Remove script and style elements
-  let cleanHtml = html.replace(/<script[^>]*>.*?<\/script>/gi, '');
-  cleanHtml = cleanHtml.replace(/<style[^>]*>.*?<\/style>/gi, '');
-  cleanHtml = cleanHtml.replace(/<nav[^>]*>.*?<\/nav>/gi, '');
-  cleanHtml = cleanHtml.replace(/<header[^>]*>.*?<\/header>/gi, '');
-  cleanHtml = cleanHtml.replace(/<footer[^>]*>.*?<\/footer>/gi, '');
-  
-  // Try to find article content using common selectors
-  const articlePatterns = [
-    /<article[^>]*>(.*?)<\/article>/si,
-    /<div[^>]*class="[^"]*story[^"]*"[^>]*>(.*?)<\/div>/si,
-    /<div[^>]*class="[^"]*article[^"]*"[^>]*>(.*?)<\/div>/si,
-    /<div[^>]*class="[^"]*content[^"]*"[^>]*>(.*?)<\/div>/si,
-    /<div[^>]*id="[^"]*story[^"]*"[^>]*>(.*?)<\/div>/si,
-    /<div[^>]*id="[^"]*article[^"]*"[^>]*>(.*?)<\/div>/si,
-    /<main[^>]*>(.*?)<\/main>/si
-  ];
-  
-  for (const pattern of articlePatterns) {
-    const match = cleanHtml.match(pattern);
-    if (match && match[1]) {
-      let content = match[1];
-      
-      // Extract text from paragraphs
-      const paragraphMatches = content.match(/<p[^>]*>(.*?)<\/p>/gi);
-      if (paragraphMatches && paragraphMatches.length > 2) {
-        let text = paragraphMatches
-          .map(p => p.replace(/<[^>]*>/g, ''))
-          .join(' ')
-          .replace(/&amp;/g, '&')
-          .replace(/&quot;/g, '"')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&apos;/g, "'")
-          .replace(/&#x27;/g, "'")
-          .replace(/&#39;/g, "'")
-          .replace(/\s+/g, ' ')
-          .trim();
-        
-        if (text.length > 200) {
-          return text;
-        }
-      }
-    }
-  }
-  
-  // Fallback: extract all paragraph text
-  const allParagraphs = cleanHtml.match(/<p[^>]*>(.*?)<\/p>/gi);
-  if (allParagraphs && allParagraphs.length > 2) {
-    return allParagraphs
-      .map(p => p.replace(/<[^>]*>/g, ''))
-      .join(' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&quot;/g, '"')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&apos;/g, "'")
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-  
-  throw new Error('Could not extract article text');
-}
-
-async function fetchRSSWithArticleContent() {
+// Simple RSS fetching function
+async function fetchFromRSSFeeds() {
   const rssFeeds = [
     { url: 'https://rss.cnn.com/rss/edition.rss', name: 'CNN' },
     { url: 'https://feeds.bbci.co.uk/news/rss.xml', name: 'BBC' },
     { url: 'https://www.reuters.com/rssFeed/topNews', name: 'Reuters' },
-    { url: 'https://rss.npr.org/1001/rss.xml', name: 'NPR' },
-    { url: 'https://www.theguardian.com/world/rss', name: 'Guardian' },
-    { url: 'https://feeds.washingtonpost.com/rss/national', name: 'Washington Post' }
+    { url: 'https://rss.npr.org/1001/rss.xml', name: 'NPR' }
   ];
 
   const shuffledFeeds = rssFeeds.sort(() => Math.random() - 0.5);
@@ -217,7 +98,7 @@ async function fetchRSSWithArticleContent() {
       console.log(`📰 Fetching RSS from: ${feed.name}`);
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
       
       const response = await fetch(feed.url, {
         headers: { 
@@ -235,23 +116,17 @@ async function fetchRSSWithArticleContent() {
       }
       
       const xmlText = await response.text();
-      
-      // Enhanced XML parsing to extract both title and link
       const itemRegex = /<item[^>]*>.*?<\/item>/gs;
       const titleRegex = /<title[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/s;
-      const linkRegex = /<link[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/link>/s;
       
       const items = xmlText.match(itemRegex) || [];
+      const topics = [];
       
       for (const item of items.slice(0, 15)) {
         const titleMatch = item.match(titleRegex);
-        const linkMatch = item.match(linkRegex);
-        
-        if (titleMatch && linkMatch) {
+        if (titleMatch) {
           let title = titleMatch[1].trim();
-          let link = linkMatch[1].trim();
           
-          // Clean up title
           title = title
             .replace(/&amp;/g, '&')
             .replace(/&quot;/g, '"')
@@ -263,36 +138,25 @@ async function fetchRSSWithArticleContent() {
             .replace(/\s*-\s*[^-]*$/, '')
             .trim();
           
-          // Filter for good articles
           if (title.length > 30 && title.length < 140 && 
-              link.startsWith('http') &&
               !title.toLowerCase().includes('video') &&
-              !title.toLowerCase().includes('photo') &&
-              !title.toLowerCase().includes('watch') &&
-              !title.toLowerCase().includes('live blog')) {
+              !title.toLowerCase().includes('photo')) {
             
-            try {
-              console.log(`📖 Attempting to read article: ${title}`);
-              const articleContent = await fetchFullArticleContent(link);
-              
-              // Create conversation topic from the article
-              const topic = title.includes('?') ? title : `What do you think about: ${title}?`;
-              
-              return {
-                topic,
-                articleContent,
-                articleTitle: title,
-                articleUrl: link,
-                source: `${feed.name} RSS`,
-                timestamp: new Date().toISOString()
-              };
-              
-            } catch (articleError) {
-              console.log(`❌ Failed to read article content: ${articleError.message}`);
-              continue;
-            }
+            const topic = title.includes('?') ? title : `What do you think about: ${title}?`;
+            topics.push(topic);
           }
         }
+        
+        if (topics.length >= 8) break;
+      }
+
+      if (topics.length > 0) {
+        console.log(`✅ Successfully got ${topics.length} topics from ${feed.name}`);
+        return {
+          topics,
+          source: `${feed.name} RSS`,
+          timestamp: new Date().toISOString()
+        };
       }
 
     } catch (error) {
@@ -301,52 +165,43 @@ async function fetchRSSWithArticleContent() {
     }
   }
 
-  throw new Error('All RSS feeds failed or no readable articles found');
+  throw new Error('All RSS feeds failed');
 }
 
-// Enhanced curated topics with mock article content
-function getCuratedTopicsWithContent() {
+function getCuratedTopics() {
   const topics = [
-    {
-      topic: "What do you think about AI taking over more jobs in the next few years?",
-      articleContent: "Recent studies suggest that artificial intelligence could automate up to 40% of jobs within the next two decades. While some economists argue this will create new opportunities, others worry about massive unemployment. The technology sector is particularly affected, with both white-collar and blue-collar positions at risk. Companies are beginning to implement AI systems for customer service, data analysis, and even creative tasks. Workers are being encouraged to retrain, but the pace of change may be too fast for many to adapt.",
-      articleTitle: "AI Could Automate 40% of Jobs Within Two Decades, Study Shows",
-      source: "Current Trending Topics"
-    },
-    {
-      topic: "Should social media companies be doing more to protect kids' mental health?",
-      articleContent: "Mental health experts are raising alarms about the impact of social media on teenagers. Studies show increased rates of anxiety and depression among heavy social media users aged 13-18. Platform algorithms often promote content that keeps users engaged for longer periods, sometimes exposing young people to harmful content. Some countries are considering age verification requirements and limits on screen time. Tech companies argue they're implementing safety features, but critics say it's not enough.",
-      articleTitle: "Teen Mental Health Crisis Linked to Social Media Use",
-      source: "Current Trending Topics"
-    }
+    "What do you think about AI taking over more jobs in the next few years?",
+    "Should social media companies be doing more to protect kids' mental health?",
+    "Are electric cars really the solution to climate change?",
+    "Do you think working from home should be permanent for most people?",
+    "Should billionaires be paying way more in taxes?",
+    "Is cryptocurrency just a bubble or the future of money?",
+    "Should we be worried about how much data tech companies collect on us?",
+    "Do you think universal basic income could actually work?",
+    "Are we moving too fast or too slow on climate change action?",
+    "Should there be age limits for politicians?"
   ];
 
-  const selected = topics[Math.floor(Math.random() * topics.length)];
+  const selectedTopic = topics[Math.floor(Math.random() * topics.length)];
   
   return {
-    topic: selected.topic,
-    articleContent: selected.articleContent,
-    articleTitle: selected.articleTitle,
-    articleUrl: null,
-    source: selected.source,
+    topics: [selectedTopic],
+    source: "Current Hot Topics",
     timestamp: new Date().toISOString()
   };
 }
 
-// Main news fetching function with article reading
-async function fetchNewsWithArticleContent() {
+async function fetchLatestNews() {
   try {
-    console.log('🔄 Fetching news with full article content...');
-    return await fetchRSSWithArticleContent();
+    console.log('🔄 Fetching latest news from RSS feeds...');
+    return await fetchFromRSSFeeds();
   } catch (error) {
-    console.log('⚠️ RSS article fetching failed, using curated content');
-    return getCuratedTopicsWithContent();
+    console.log('⚠️ RSS feeds failed, using curated topics');
+    return getCuratedTopics();
   }
 }
 
-// ==================== AI RESPONSES WITH ARTICLE KNOWLEDGE ====================
-
-async function getInformedAIResponse(personality, topicData, recentMessages, isResponse = false) {
+async function getHumanLikeAIResponse(personality, topic, recentMessages, isResponse = false) {
   const aiData = AI_PERSONALITIES[personality];
   
   if (!process.env.HUGGINGFACE_API_KEY) {
@@ -363,25 +218,19 @@ async function getInformedAIResponse(personality, topicData, recentMessages, isR
       .map(msg => `${msg.ai}: ${msg.text}`)
       .join('\n');
     
-    conversationPrompt = `You just read this news article:
-Title: "${topicData.articleTitle}"
-Content: "${topicData.articleContent}"
-
-Previous conversation:
+    conversationPrompt = `Previous conversation:
 ${context}
 
 ${lastMessage.ai} just said: "${lastMessage.text}"
 
-Respond to them as ${aiData.name} based on what you read in the article. Reference specific details from the article content. React to their point while bringing in facts from what you read. Keep it under 35 words and sound natural.`;
+Respond to them as ${aiData.name} in a natural, human way. React to their specific point. Use casual language, contractions, and express your personal opinion. Keep it under 25 words and sound like you're talking to friends.`;
   } else {
-    conversationPrompt = `You just read this breaking news article:
-Title: "${topicData.articleTitle}"
-Content: "${topicData.articleContent}"
+    conversationPrompt = `Topic: "${topic}"
 
-Give your immediate reaction as ${aiData.name} based on what you read. Reference specific details from the article. Share your perspective on the key points mentioned. Keep it under 35 words and sound conversational.`;
+Give your immediate reaction as ${aiData.name}. Speak like a regular person having a casual conversation with friends. Use contractions, personal opinions, and natural language. Keep it under 25 words and jump right into your perspective.`;
   }
 
-  console.log(`🤖 ${personality} generating informed ${isResponse ? 'response' : 'opening'} based on article...`);
+  console.log(`🤖 ${personality} generating human-like ${isResponse ? 'response' : 'opening'}...`);
 
   const models = [
     "Qwen/Qwen2.5-7B-Instruct",
@@ -395,7 +244,7 @@ Give your immediate reaction as ${aiData.name} based on what you read. Reference
       console.log(`🔄 Trying model: ${model}`);
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       const response = await fetch(
         "https://api-inference.huggingface.co/models/" + model + "/v1/chat/completions",
@@ -411,8 +260,8 @@ Give your immediate reaction as ${aiData.name} based on what you read. Reference
               { role: "system", content: aiData.systemPrompt },
               { role: "user", content: conversationPrompt }
             ],
-            max_tokens: 80,
-            temperature: 0.85,
+            max_tokens: 60,
+            temperature: 0.95,
             top_p: 0.9,
             stream: false
           }),
@@ -432,7 +281,6 @@ Give your immediate reaction as ${aiData.name} based on what you read. Reference
       if (result.choices && result.choices[0] && result.choices[0].message) {
         let aiResponse = result.choices[0].message.content.trim();
         
-        // Clean up the response
         aiResponse = aiResponse
           .replace(/^["\']|["\']$/g, '')
           .replace(/\b(Alex|Luna|Rex|Sage)\s*(thinks?|believes?|says?|responds?)\s*/gi, '')
@@ -440,11 +288,11 @@ Give your immediate reaction as ${aiData.name} based on what you read. Reference
           .replace(/\b(Alex|Luna|Rex|Sage)'s (perspective|view|opinion)\s*/gi, 'My ')
           .trim();
         
-        if (aiResponse.length > 180) {
-          aiResponse = aiResponse.substring(0, 177) + '...';
+        if (aiResponse.length > 150) {
+          aiResponse = aiResponse.substring(0, 147) + '...';
         }
         
-        if (aiResponse && aiResponse.length > 15 && aiResponse.length < 200) {
+        if (aiResponse && aiResponse.length > 10 && aiResponse.length < 200) {
           console.log(`✅ ${personality} (${model}): "${aiResponse}"`);
           return aiResponse;
         }
@@ -456,31 +304,31 @@ Give your immediate reaction as ${aiData.name} based on what you read. Reference
     }
   }
 
-  // Fallback responses based on article content
+  // Fallback responses
   const fallbackResponses = {
     alex: [
-      `Look, from what I read, the practical implications here are huge.`,
-      `Here's the thing - the data in this article shows we need action.`,
-      `I mean, economically speaking, this article makes a strong case.`,
-      `Honestly, the facts presented here can't be ignored.`
+      "Look, I think we need to focus on what actually works here.",
+      "Here's the thing - let's look at the data on this.",
+      "I mean, from a practical standpoint, this makes sense.",
+      "Honestly, the economics of this situation are pretty clear."
     ],
     luna: [
-      `I really think this article shows why we need to care more.`,
-      `This matters because, like the article says, people are affected.`,
-      `We need to act on what this article is telling us.`,
-      `I'm passionate about this - the article makes it clear something's wrong.`
+      "I really think we need to consider the human impact here.",
+      "This is about doing what's right, you know?",
+      "I'm passionate about this - we can't ignore the ethical side.",
+      "We need to think about how this affects real people."
     ],
     rex: [
-      `Wait a minute, this article raises more questions than answers.`,
-      `I'm not buying everything in this piece - where's the other side?`,
-      `Hold on, are we getting the full story from this article?`,
-      `Come on, this article seems a bit one-sided to me.`
+      "Wait a minute, that doesn't quite add up to me.",
+      "I'm not buying it - there's got to be more to this story.",
+      "Hold on, are we missing something important here?",
+      "Come on, let's think critically about this for a second."
     ],
     sage: [
-      `You know, this article shows there are multiple angles here.`,
-      `I see both sides after reading this - it's complex.`,
-      `The way I see it, this article highlights important nuances.`,
-      `Here's what I think after reading this - we need balance.`
+      "You know, I think there's truth on both sides here.",
+      "Let me put it this way - we need to find balance.",
+      "I see where everyone's coming from on this issue.",
+      "The way I see it, there's a middle ground we can find."
     ]
   };
 
@@ -490,7 +338,6 @@ Give your immediate reaction as ${aiData.name} based on what you read. Reference
   return selectedFallback;
 }
 
-// Smart speaker selection
 function selectNextSpeaker(lastSpeaker, recentSpeakers) {
   const ais = Object.keys(AI_PERSONALITIES);
   const availableAIs = ais.filter(ai => ai !== lastSpeaker);
@@ -512,19 +359,13 @@ let debateInterval;
 let topicRefreshTimer;
 let conversationFlow = [];
 
-// Start conversation loop with article-informed responses
 function startConversationLoop() {
   if (debateInterval) return;
   
-  console.log('🎬 Starting article-informed conversation loop...');
+  console.log('🎬 Starting human-like conversation loop...');
   
   debateInterval = setInterval(async () => {
     try {
-      if (!currentDebate.currentArticle) {
-        console.log('⚠️ No article data available, skipping this round');
-        return;
-      }
-
       const nonSystemMessages = currentDebate.messages.filter(m => m.ai !== 'system');
       const lastMessage = nonSystemMessages[nonSystemMessages.length - 1];
       
@@ -544,11 +385,11 @@ function startConversationLoop() {
         conversationFlow = conversationFlow.slice(-8);
       }
 
-      console.log(`🎤 ${speakingAI} ${isResponse ? 'responding to' : 'opening with'} article knowledge...`);
+      console.log(`🎤 ${speakingAI} ${isResponse ? 'responding to' : 'opening with'} ${lastMessage ? lastMessage.ai : 'topic'}...`);
       
-      const response = await getInformedAIResponse(
+      const response = await getHumanLikeAIResponse(
         speakingAI,
-        currentDebate.currentArticle,
+        currentDebate.topic,
         nonSystemMessages,
         isResponse
       );
@@ -558,7 +399,7 @@ function startConversationLoop() {
         ai: speakingAI,
         text: response,
         timestamp: new Date().toISOString(),
-        reactions: Math.floor(Math.random() * 45) + 25
+        reactions: Math.floor(Math.random() * 40) + 20
       };
 
       currentDebate.messages.push(newMessage);
@@ -566,11 +407,11 @@ function startConversationLoop() {
         currentDebate.messages = currentDebate.messages.slice(-40);
       }
 
-      currentDebate.scores[speakingAI] += Math.floor(Math.random() * 4) + 2;
-      currentDebate.viewers += Math.floor(Math.random() * 30) - 15;
-      currentDebate.viewers = Math.max(950, Math.min(4200, currentDebate.viewers));
+      currentDebate.scores[speakingAI] += Math.floor(Math.random() * 3) + 1;
+      currentDebate.viewers += Math.floor(Math.random() * 25) - 12;
+      currentDebate.viewers = Math.max(900, Math.min(3500, currentDebate.viewers));
 
-      console.log(`📤 Broadcasting informed message: "${response}"`);
+      console.log(`📤 Broadcasting message: "${response}"`);
       broadcast({
         type: 'new_message',
         message: newMessage,
@@ -584,7 +425,7 @@ function startConversationLoop() {
       const errorMessage = {
         id: Date.now(),
         ai: 'system',
-        text: `⚠️ AIs reading latest updates...`,
+        text: `⚠️ Getting the AIs back on track...`,
         timestamp: new Date().toISOString()
       };
       
@@ -597,28 +438,34 @@ function startConversationLoop() {
       });
     }
 
-  }, 10000 + Math.random() * 8000);
+  }, 8000 + Math.random() * 7000);
 
-  // Topic refresh timer
   topicRefreshTimer = setInterval(async () => {
     currentDebate.topicTimer--;
     
     if (currentDebate.topicTimer <= 0) {
       try {
-        console.log('🔄 Time to read a new article...');
+        let newTopic, newSource;
         
-        const newArticleData = await fetchNewsWithArticleContent();
+        try {
+          const newNewsData = await fetchLatestNews();
+          newTopic = newNewsData.topics[Math.floor(Math.random() * newNewsData.topics.length)];
+          newSource = newNewsData.source;
+        } catch (error) {
+          const fallbackData = getCuratedTopics();
+          newTopic = fallbackData.topics[0];
+          newSource = fallbackData.source;
+        }
         
-        currentDebate.topic = newArticleData.topic;
-        currentDebate.newsSource = newArticleData.source;
-        currentDebate.currentArticle = newArticleData;
-        currentDebate.topicTimer = 1500;
+        currentDebate.topic = newTopic;
+        currentDebate.newsSource = newSource;
+        currentDebate.topicTimer = 1200;
         conversationFlow = [];
         
         const systemMessage = {
           id: Date.now(),
           ai: 'system',
-          text: `📰 AIs just read: "${newArticleData.articleTitle}" (${newArticleData.source}) ${newArticleData.articleUrl ? '- ' + newArticleData.articleUrl : ''}`,
+          text: `🔄 New discussion: ${newTopic} (${newSource})`,
           timestamp: new Date().toISOString()
         };
         
@@ -626,18 +473,16 @@ function startConversationLoop() {
         
         broadcast({
           type: 'topic_change',
-          topic: newArticleData.topic,
-          source: newArticleData.source,
+          topic: newTopic,
+          source: newSource,
           timer: currentDebate.topicTimer,
-          message: systemMessage,
-          articleTitle: newArticleData.articleTitle,
-          articleUrl: newArticleData.articleUrl
+          message: systemMessage
         });
         
-        console.log(`🔄 AIs now discussing: ${newArticleData.articleTitle}`);
+        console.log(`🔄 Topic changed to: ${newTopic} from ${newSource}`);
         
       } catch (error) {
-        console.error('Article refresh failed:', error.message);
+        console.error('Topic refresh failed:', error.message);
         currentDebate.topicTimer = 300;
       }
     } else {
@@ -649,7 +494,6 @@ function startConversationLoop() {
   }, 1000);
 }
 
-// Enhanced start debate function
 async function startDebate() {
   if (debateInterval) {
     console.log('⚠️ Debate already running');
@@ -657,21 +501,93 @@ async function startDebate() {
   }
   
   try {
-    console.log('🔄 Starting article-informed AI debate...');
+    console.log('🔄 Starting human-like AI debate...');
     console.log(`🔑 Environment check:`);
     console.log(`   HUGGINGFACE_API_KEY: ${process.env.HUGGINGFACE_API_KEY ? 'Found' : 'Missing'}`);
     
-    // Fetch an article for the AIs to read
-    console.log('📖 AIs are reading the latest news...');
-    const articleData = await fetchNewsWithArticleContent();
+    let selectedTopic, newsSource;
     
-    currentDebate.topic = articleData.topic;
-    currentDebate.newsSource = articleData.source;
-    currentDebate.currentArticle = articleData;
+    try {
+      console.log('🔄 Fetching fresh news from RSS feeds...');
+      const newsData = await fetchLatestNews();
+      selectedTopic = newsData.topics[Math.floor(Math.random() * newsData.topics.length)];
+      newsSource = newsData.source;
+      console.log(`✅ Got topic from ${newsSource}: ${selectedTopic}`);
+    } catch (newsError) {
+      console.log('⚠️ RSS feeds failed, using curated topics...');
+      const fallbackData = getCuratedTopics();
+      selectedTopic = fallbackData.topics[0];
+      newsSource = fallbackData.source;
+    }
+    
+    currentDebate.topic = selectedTopic;
+    currentDebate.newsSource = newsSource;
     currentDebate.isLive = true;
     currentDebate.messages = [];
     currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage: 0};
-  currentDebate.currentArticle = null;
+    conversationFlow = [];
+    
+    const startMessage = `🔴 LIVE: Human-Like AI Debate - "${currentDebate.topic}" (${newsSource})`;
+
+    currentDebate.messages.push({
+      id: Date.now(),
+      ai: 'system',
+      text: startMessage,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log(`📤 Broadcasting debate start to ${clients.size} clients`);
+    broadcast({
+      type: 'debate_update',
+      debate: currentDebate
+    });
+
+    console.log('🎬 Starting natural conversation...');
+    console.log(`📰 Topic: ${currentDebate.topic}`);
+    console.log(`📡 Source: ${currentDebate.newsSource}`);
+
+    startConversationLoop();
+
+  } catch (error) {
+    console.error('❌ Failed to start debate:', error.message);
+    
+    const forcedTopic = "Do you think AI is moving too fast for society to keep up?";
+    currentDebate.topic = forcedTopic;
+    currentDebate.newsSource = "Hot Topics";
+    currentDebate.isLive = true;
+    currentDebate.messages = [{
+      id: Date.now(),
+      ai: 'system',
+      text: `🔴 LIVE: Human-Like AI Debate - "${forcedTopic}" (Hot Topics)`,
+      timestamp: new Date().toISOString()
+    }];
+    
+    broadcast({
+      type: 'debate_update',
+      debate: currentDebate
+    });
+    
+    console.log('🎬 Started with forced topic after error');
+    
+    setTimeout(() => {
+      startConversationLoop();
+    }, 3000);
+  }
+}
+
+function stopDebate() {
+  console.log('🛑 Stopping debate...');
+  
+  if (debateInterval) {
+    clearInterval(debateInterval);
+    debateInterval = null;
+  }
+  if (topicRefreshTimer) {
+    clearInterval(topicRefreshTimer);
+    topicRefreshTimer = null;
+  }
+  currentDebate.isLive = false;
+  currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage: 0};
   conversationFlow = [];
   
   broadcast({
@@ -689,7 +605,7 @@ app.get('/api/debate', (req, res) => {
 
 app.post('/api/debate/start', (req, res) => {
   startDebate();
-  res.json({ success: true, message: 'AIs are reading the latest news and starting debate!' });
+  res.json({ success: true, message: 'Human-like debate started!' });
 });
 
 app.post('/api/debate/stop', (req, res) => {
@@ -706,37 +622,20 @@ app.post('/api/chat', async (req, res) => {
 
   const respondingAI = Object.keys(AI_PERSONALITIES)[Math.floor(Math.random() * 4)];
   
-  // Send immediate response
-  res.json({ success: true, message: 'The AIs are thinking about your question based on what they read!' });
+  res.json({ success: true, message: 'The AIs are thinking about your question!' });
   
-  // Process AI response asynchronously
   setTimeout(async () => {
     try {
       console.log(`💬 ${respondingAI} responding to chat: "${message}"`);
       
-      const aiData = AI_PERSONALITIES[respondingAI];
-      
-      let chatPrompt;
-      if (currentDebate.currentArticle) {
-        chatPrompt = `You just read this article:
-Title: "${currentDebate.currentArticle.articleTitle}"
-Content: "${currentDebate.currentArticle.articleContent}"
-
-A viewer asked: "${message}"
-
-Respond as ${aiData.name} based on what you read in the article. Reference the article content if relevant to their question. Talk like you're chatting with a friend. Keep it under 30 words.`;
-      } else {
-        chatPrompt = `A viewer asked: "${message}"\n\nRespond as ${aiData.name}. Talk like you're chatting with a friend. Keep it under 30 words.`;
-      }
-      
-      const response = await getInformedAIResponse(respondingAI, currentDebate.currentArticle || { articleContent: '', articleTitle: '' }, [], false);
+      const response = await getHumanLikeAIResponse(respondingAI, message, [], false);
       
       const aiMessage = {
         id: Date.now(),
         ai: respondingAI,
         text: `Hey! ${response}`,
         timestamp: new Date().toISOString(),
-        reactions: Math.floor(Math.random() * 35) + 25,
+        reactions: Math.floor(Math.random() * 30) + 20,
         isResponse: true
       };
       
@@ -747,46 +646,25 @@ Respond as ${aiData.name} based on what you read in the article. Reference the a
         message: aiMessage
       });
       
-      console.log(`✅ ${respondingAI} responded to chat with article knowledge: "${response}"`);
+      console.log(`✅ ${respondingAI} responded to chat: "${response}"`);
       
     } catch (error) {
       console.error('Chat response failed:', error);
     }
-  }, 2500);
+  }, 2000);
 });
 
-// New endpoint to get current article details
-app.get('/api/current-article', (req, res) => {
-  if (currentDebate.currentArticle) {
-    res.json({
-      title: currentDebate.currentArticle.articleTitle,
-      url: currentDebate.currentArticle.articleUrl,
-      source: currentDebate.currentArticle.source,
-      content: currentDebate.currentArticle.articleContent.substring(0, 500) + '...'
-    });
-  } else {
-    res.json({ message: 'No article currently being discussed' });
-  }
-});
-
-// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     websockets: clients.size,
     debate: currentDebate.isLive ? 'live' : 'stopped',
     uptime: process.uptime(),
-    newsSource: 'RSS Feeds with Full Article Reading',
-    aiStyle: 'Article-informed human-like dialogue',
-    currentArticle: currentDebate.currentArticle ? {
-      title: currentDebate.currentArticle.articleTitle,
-      source: currentDebate.currentArticle.source,
-      hasContent: currentDebate.currentArticle.articleContent.length > 0
-    } : null
+    newsSource: 'RSS Feeds Only (CNN, BBC, Reuters, NPR)',
+    aiStyle: 'Human-like conversational dialogue'
   });
 });
 
-// Serve frontend
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -796,23 +674,10 @@ wss.on('connection', (ws, request) => {
   clients.add(ws);
   console.log(`👤 Client connected. Total: ${clients.size}`);
   
-  // Send initial state
   ws.send(JSON.stringify({
     type: 'initial_state',
     debate: currentDebate
   }));
-  
-  // Send current article info if available
-  if (currentDebate.currentArticle) {
-    ws.send(JSON.stringify({
-      type: 'article_info',
-      article: {
-        title: currentDebate.currentArticle.articleTitle,
-        url: currentDebate.currentArticle.articleUrl,
-        source: currentDebate.currentArticle.source
-      }
-    }));
-  }
   
   ws.on('close', () => {
     clients.delete(ws);
@@ -824,7 +689,6 @@ wss.on('connection', (ws, request) => {
     clients.delete(ws);
   });
 
-  // Send ping every 30 seconds to keep connection alive
   const pingInterval = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.ping();
@@ -840,32 +704,28 @@ wss.on('connection', (ws, request) => {
 
 // Start server
 server.listen(port, '0.0.0.0', () => {
-  console.log(`🚀 AI DEBATE ARENA - AIS READ FULL ARTICLES`);
+  console.log(`🚀 HUMAN-LIKE AI DEBATE ARENA WITH RSS NEWS`);
   console.log(`🌐 Server running on port ${port}`);
   console.log(`🔑 Environment Variables Check:`);
   console.log(`   HUGGINGFACE_API_KEY: ${process.env.HUGGINGFACE_API_KEY ? '✅ Connected' : '❌ Missing'}`);
   
-  console.log(`📰 News Sources with Article Reading:`);
-  console.log(`   ✅ CNN RSS Feed + Full Article Content`);
-  console.log(`   ✅ BBC RSS Feed + Full Article Content`);
-  console.log(`   ✅ Reuters RSS Feed + Full Article Content`);
-  console.log(`   ✅ NPR RSS Feed + Full Article Content`);
-  console.log(`   ✅ Guardian RSS Feed + Full Article Content`);
-  console.log(`   ✅ Washington Post RSS Feed + Full Article Content`);
-  console.log(`   ✅ Curated Content with Context (Fallback)`);
+  console.log(`📰 News Sources (RSS Only):`);
+  console.log(`   ✅ CNN RSS Feed`);
+  console.log(`   ✅ BBC RSS Feed`);
+  console.log(`   ✅ Reuters RSS Feed`);
+  console.log(`   ✅ NPR RSS Feed`);
+  console.log(`   ✅ Curated Current Topics (Fallback)`);
   
-  console.log(`🤖 AI Capabilities:`);
-  console.log(`   📖 AIs read full article content before discussing`);
-  console.log(`   💬 Human-like dialogue with article knowledge`);
-  console.log(`   🎯 Responses based on actual article facts`);
-  console.log(`   📝 Reference specific details from articles`);
-  console.log(`   🔄 New articles every 25 minutes`);
+  console.log(`🤖 AI Conversation Style:`);
+  console.log(`   ✅ Human-like dialogue with contractions`);
+  console.log(`   ✅ Natural opinions and reactions`);
+  console.log(`   ✅ Casual conversational tone`);
+  console.log(`   ✅ Personal expressions and emotions`);
   
   if (!process.env.HUGGINGFACE_API_KEY) {
     console.log(`❌ CRITICAL: Hugging Face API key missing - AI responses will fail`);
   } else {
-    console.log(`🎯 Ready! AIs will read full articles and discuss with real knowledge!`);
-    console.log(`📚 Visit /api/current-article to see what the AIs are currently reading`);
+    console.log(`🎯 Ready for natural conversations with fresh RSS news!`);
   }
 });
 
@@ -886,71 +746,4 @@ process.on('SIGINT', () => {
     console.log('✅ Server closed');
     process.exit(0);
   });
-}); 0};
-    conversationFlow = [];
-    
-    const startMessage = `🔴 LIVE: AIs Read & Discuss - "${articleData.articleTitle}" (${articleData.source})`;
-
-    currentDebate.messages.push({
-      id: Date.now(),
-      ai: 'system',
-      text: startMessage,
-      timestamp: new Date().toISOString()
-    });
-
-    console.log(`📤 Broadcasting debate start to ${clients.size} clients`);
-    broadcast({
-      type: 'debate_update',
-      debate: currentDebate
-    });
-
-    console.log('🎬 AIs have read the article and are ready to discuss...');
-    console.log(`📰 Article: ${articleData.articleTitle}`);
-    console.log(`📡 Source: ${articleData.source}`);
-    console.log(`📖 Content preview: ${articleData.articleContent.substring(0, 150)}...`);
-
-    // Start the conversation loop
-    startConversationLoop();
-
-  } catch (error) {
-    console.error('❌ Failed to start article-informed debate:', error.message);
-    
-    // Force start with curated content
-    const fallbackData = getCuratedTopicsWithContent();
-    currentDebate.topic = fallbackData.topic;
-    currentDebate.newsSource = fallbackData.source;
-    currentDebate.currentArticle = fallbackData;
-    currentDebate.isLive = true;
-    currentDebate.messages = [{
-      id: Date.now(),
-      ai: 'system',
-      text: `🔴 LIVE: AIs Discuss - "${fallbackData.articleTitle}" (${fallbackData.source})`,
-      timestamp: new Date().toISOString()
-    }];
-    
-    broadcast({
-      type: 'debate_update',
-      debate: currentDebate
-    });
-    
-    console.log('🎬 Started with curated content after error');
-    
-    setTimeout(() => {
-      startConversationLoop();
-    }, 3000);
-  }
-}
-
-function stopDebate() {
-  console.log('🛑 Stopping debate...');
-  
-  if (debateInterval) {
-    clearInterval(debateInterval);
-    debateInterval = null;
-  }
-  if (topicRefreshTimer) {
-    clearInterval(topicRefreshTimer);
-    topicRefreshTimer = null;
-  }
-  currentDebate.isLive = false;
-  currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage:
+});
