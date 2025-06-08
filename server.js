@@ -1,4 +1,4 @@
-// server.js - AI Debate Arena with Multiple News Sources
+// server.js - AI Debate Arena with RSS-Only News & Human-Like Dialogue
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
@@ -22,28 +22,28 @@ const AI_PERSONALITIES = {
     role: "The Pragmatist",
     color: "bg-blue-500",
     avatar: "🤖",
-    systemPrompt: "You are Alex, a pragmatic debater. Always speak in first person (I, me, my, myself). Focus on economics, data, and practical solutions. Be conversational and respond directly to what others say. Keep responses to 1-2 sentences maximum."
+    systemPrompt: `You are Alex, a practical and down-to-earth person who loves talking about real-world solutions. You speak like a regular human - use contractions (I'll, don't, can't), casual phrases, and personal opinions. Start responses with phrases like "Look,", "Here's the thing,", "I mean,", "Honestly,". Talk about economics, data, and what actually works in practice. Keep it conversational and under 30 words. Express strong personal opinions using "I think", "I believe", "In my view".`
   },
   luna: {
     name: "Luna",
     role: "The Idealist",
     color: "bg-purple-500",
     avatar: "✨",
-    systemPrompt: "You are Luna, an idealistic debater. Always speak in first person (I, me, my, myself). Champion human rights, ethics, and moral principles. Be passionate and respond directly to what others say. Keep responses to 1-2 sentences maximum."
+    systemPrompt: `You are Luna, a passionate idealist who cares deeply about making the world better. Speak like an enthusiastic human - use emotional language, personal stories, and heartfelt opinions. Start with phrases like "I really think,", "This matters because,", "We need to,", "I'm passionate about this -". Focus on human rights, ethics, and what's morally right. Be conversational and under 30 words. Show genuine emotion and care.`
   },
   rex: {
     name: "Rex",
     role: "The Skeptic",
     color: "bg-red-500",
     avatar: "🔍",
-    systemPrompt: "You are Rex, a skeptical debater. Always speak in first person (I, me, my, myself). Question assumptions and challenge what others say. Be critical but constructive. Keep responses to 1-2 sentences maximum."
+    systemPrompt: `You are Rex, a sharp skeptic who questions everything and isn't easily convinced. Talk like a critical thinker - use phrases like "Wait a minute,", "That doesn't make sense,", "I'm not buying it,", "Hold on,", "Come on,". Challenge what others say but stay respectful. Be conversational, use contractions, and under 30 words. Express doubt and ask tough questions.`
   },
   sage: {
     name: "Sage",
     role: "The Mediator",
     color: "bg-green-500",
     avatar: "🧠",
-    systemPrompt: "You are Sage, a wise mediator. Always speak in first person (I, me, my, myself). Find common ground and bridge different perspectives. Respond thoughtfully to others' points. Keep responses to 1-2 sentences maximum."
+    systemPrompt: `You are Sage, a wise person who tries to find balance and bring people together. Speak thoughtfully like a good friend giving advice. Use phrases like "You know,", "I see both sides,", "Here's what I think,", "Let me put it this way,", "The way I see it,". Find common ground and bridge different viewpoints. Be conversational and under 30 words. Sound wise but approachable.`
   }
 };
 
@@ -84,9 +84,8 @@ function broadcast(data) {
   });
 }
 
-// ==================== NEWS FETCHING FUNCTIONS ====================
+// ==================== RSS-ONLY NEWS FETCHING ====================
 
-// 1. RSS Feed Parser (No API key needed!)
 async function fetchFromRSSFeeds() {
   const rssFeeds = [
     { url: 'https://rss.cnn.com/rss/edition.rss', name: 'CNN' },
@@ -97,348 +96,176 @@ async function fetchFromRSSFeeds() {
     { url: 'https://feeds.washingtonpost.com/rss/national', name: 'Washington Post' }
   ];
 
-  const selectedFeed = rssFeeds[Math.floor(Math.random() * rssFeeds.length)];
+  // Try multiple feeds until one works
+  const shuffledFeeds = rssFeeds.sort(() => Math.random() - 0.5);
   
-  try {
-    console.log(`📰 Fetching RSS from: ${selectedFeed.name}`);
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    const response = await fetch(selectedFeed.url, {
-      headers: { 'User-Agent': 'AI-Debate-Arena/1.0' },
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) throw new Error(`RSS fetch failed: ${response.status}`);
-    
-    const xmlText = await response.text();
-    
-    // Simple XML parsing for RSS items
-    const itemRegex = /<item[^>]*>.*?<\/item>/gs;
-    const titleRegex = /<title[^>]*><!\[CDATA\[(.*?)\]\]><\/title>|<title[^>]*>(.*?)<\/title>/s;
-    
-    const items = xmlText.match(itemRegex) || [];
-    const topics = [];
-    
-    for (const item of items.slice(0, 15)) {
-      const titleMatch = item.match(titleRegex);
-      if (titleMatch) {
-        let title = (titleMatch[1] || titleMatch[2] || '').trim();
-        
-        // Clean up title
-        title = title
-          .replace(/&amp;/g, '&')
-          .replace(/&quot;/g, '"')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/\s+/g, ' ')
-          .replace(/^\s*[\d\w\s]*:\s*/, '') // Remove "Breaking:" etc.
-          .trim();
-        
-        if (title.length > 25 && title.length < 150) {
-          if (title.includes('?')) {
-            topics.push(title);
-          } else {
-            topics.push(`What's your perspective on: ${title}?`);
-          }
-        }
-      }
+  for (const feed of shuffledFeeds) {
+    try {
+      console.log(`📰 Fetching RSS from: ${feed.name}`);
       
-      if (topics.length >= 8) break;
-    }
-
-    if (topics.length === 0) throw new Error('No valid topics extracted');
-
-    return {
-      topics,
-      source: `${selectedFeed.name} RSS`,
-      timestamp: new Date().toISOString()
-    };
-
-  } catch (error) {
-    console.error('RSS fetch failed:', error.message);
-    throw error;
-  }
-}
-
-// 2. Reddit API (No key needed for public posts)
-async function fetchFromReddit() {
-  const subreddits = ['news', 'worldnews', 'technology', 'science', 'politics'];
-  const selectedSubreddit = subreddits[Math.floor(Math.random() * subreddits.length)];
-  
-  try {
-    console.log(`📰 Fetching from Reddit: r/${selectedSubreddit}`);
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    const response = await fetch(
-      `https://www.reddit.com/r/${selectedSubreddit}/hot.json?limit=25`,
-      {
-        headers: { 'User-Agent': 'AI-Debate-Arena/1.0' },
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      
+      const response = await fetch(feed.url, {
+        headers: { 
+          'User-Agent': 'AI-Debate-Arena/1.0',
+          'Accept': 'application/rss+xml, application/xml, text/xml'
+        },
         signal: controller.signal
-      }
-    );
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) throw new Error(`Reddit fetch failed: ${response.status}`);
-    
-    const data = await response.json();
-    
-    if (!data.data || !data.data.children) {
-      throw new Error('No Reddit posts found');
-    }
-
-    const topics = data.data.children
-      .filter(post => 
-        post.data.title && 
-        post.data.title.length > 20 && 
-        post.data.title.length < 150 &&
-        post.data.ups > 100 && // Only popular posts
-        !post.data.title.toLowerCase().includes('removed') &&
-        !post.data.title.toLowerCase().includes('deleted')
-      )
-      .slice(0, 10)
-      .map(post => {
-        let title = post.data.title.trim();
-        
-        if (title.includes('?')) {
-          return title;
-        } else {
-          return `What do you think about: ${title}?`;
-        }
       });
 
-    if (topics.length === 0) throw new Error('No valid Reddit topics');
+      clearTimeout(timeoutId);
 
-    return {
-      topics,
-      source: `Reddit r/${selectedSubreddit}`,
-      timestamp: new Date().toISOString()
-    };
-
-  } catch (error) {
-    console.error('Reddit fetch failed:', error.message);
-    throw error;
-  }
-}
-
-// 3. Hacker News API (No key needed)
-async function fetchFromHackerNews() {
-  try {
-    console.log('📰 Fetching from Hacker News...');
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    // Get top story IDs
-    const topStoriesResponse = await fetch(
-      'https://hacker-news.firebaseio.com/v0/topstories.json',
-      { signal: controller.signal }
-    );
-    
-    clearTimeout(timeoutId);
-    
-    if (!topStoriesResponse.ok) throw new Error('HN top stories fetch failed');
-    
-    const storyIds = await topStoriesResponse.json();
-    const selectedIds = storyIds.slice(0, 15);
-    
-    const topics = [];
-    
-    // Fetch individual story details
-    for (const id of selectedIds) {
-      try {
-        const storyController = new AbortController();
-        const storyTimeoutId = setTimeout(() => storyController.abort(), 3000);
-        
-        const storyResponse = await fetch(
-          `https://hacker-news.firebaseio.com/v0/item/${id}.json`,
-          { signal: storyController.signal }
-        );
-        
-        clearTimeout(storyTimeoutId);
-        
-        if (storyResponse.ok) {
-          const story = await storyResponse.json();
+      if (!response.ok) {
+        console.log(`❌ ${feed.name} failed with status: ${response.status}`);
+        continue;
+      }
+      
+      const xmlText = await response.text();
+      
+      // Enhanced XML parsing for RSS items
+      const itemRegex = /<item[^>]*>.*?<\/item>/gs;
+      const titleRegex = /<title[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/s;
+      
+      const items = xmlText.match(itemRegex) || [];
+      const topics = [];
+      
+      for (const item of items.slice(0, 20)) {
+        const titleMatch = item.match(titleRegex);
+        if (titleMatch) {
+          let title = titleMatch[1].trim();
           
-          if (story.title && story.title.length > 20 && story.title.length < 150) {
-            if (story.title.includes('?')) {
-              topics.push(story.title);
+          // Clean up title extensively
+          title = title
+            .replace(/&amp;/g, '&')
+            .replace(/&quot;/g, '"')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&apos;/g, "'")
+            .replace(/\s+/g, ' ')
+            .replace(/^\s*[\d\w\s]*:\s*/, '') // Remove "Breaking:" etc.
+            .replace(/\s*-\s*[^-]*$/, '') // Remove source suffix
+            .trim();
+          
+          // Filter for good debate topics
+          if (title.length > 30 && title.length < 140 && 
+              !title.toLowerCase().includes('video') &&
+              !title.toLowerCase().includes('photo') &&
+              !title.toLowerCase().includes('watch') &&
+              !title.toLowerCase().includes('live blog')) {
+            
+            // Make it more conversational
+            if (title.includes('?')) {
+              topics.push(title);
             } else {
-              topics.push(`What are your thoughts on: ${story.title}?`);
+              // Create natural conversation starters
+              const starters = [
+                `What do you guys think about ${title.toLowerCase()}?`,
+                `Anyone have thoughts on ${title.toLowerCase()}?`,
+                `How do you feel about ${title.toLowerCase()}?`,
+                `What's your take on ${title.toLowerCase()}?`,
+                `Should we be concerned about ${title.toLowerCase()}?`
+              ];
+              topics.push(starters[Math.floor(Math.random() * starters.length)]);
             }
           }
         }
         
-        if (topics.length >= 8) break;
-        
-      } catch (error) {
-        continue; // Skip failed individual requests
+        if (topics.length >= 10) break;
       }
+
+      if (topics.length > 0) {
+        console.log(`✅ Successfully got ${topics.length} topics from ${feed.name}`);
+        return {
+          topics,
+          source: `${feed.name} RSS`,
+          timestamp: new Date().toISOString()
+        };
+      } else {
+        console.log(`⚠️ ${feed.name} returned no valid topics`);
+      }
+
+    } catch (error) {
+      console.log(`❌ ${feed.name} error: ${error.message}`);
+      continue;
     }
-
-    if (topics.length === 0) throw new Error('No valid HN topics');
-
-    return {
-      topics,
-      source: 'Hacker News',
-      timestamp: new Date().toISOString()
-    };
-
-  } catch (error) {
-    console.error('Hacker News fetch failed:', error.message);
-    throw error;
-  }
-}
-
-// 4. NewsAPI (if API key is available)
-async function fetchFromNewsAPI() {
-  if (!process.env.NEWS_API_KEY) {
-    throw new Error('NEWS_API_KEY not available');
   }
 
-  try {
-    console.log('📰 Fetching from NewsAPI...');
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    const response = await fetch(
-      `https://newsapi.org/v2/top-headlines?country=us&category=general&pageSize=20&apiKey=${process.env.NEWS_API_KEY}`,
-      { signal: controller.signal }
-    );
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) throw new Error(`NewsAPI failed: ${response.status}`);
-    
-    const data = await response.json();
-    
-    if (!data.articles || data.articles.length === 0) {
-      throw new Error('No articles found');
-    }
-
-    const topics = data.articles
-      .filter(article => article.title && article.title.length > 25)
-      .slice(0, 10)
-      .map(article => {
-        let title = article.title.replace(/\s*-\s*[^-]*$/, ''); // Remove source suffix
-        
-        if (title.includes('?')) {
-          return title;
-        } else {
-          return `What are your thoughts on: ${title}?`;
-        }
-      })
-      .filter(topic => topic.length < 150);
-
-    if (topics.length === 0) throw new Error('No valid NewsAPI topics');
-
-    return {
-      topics,
-      source: 'NewsAPI',
-      timestamp: new Date().toISOString()
-    };
-
-  } catch (error) {
-    console.error('NewsAPI fetch failed:', error.message);
-    throw error;
-  }
+  throw new Error('All RSS feeds failed');
 }
 
 // Enhanced curated topics as ultimate fallback
-function getCuratedCurrentTopics() {
+function getCuratedTopics() {
   const topics = [
-    "What's your take on the rapid advancement of AI and its impact on jobs?",
-    "How should society handle the growing concerns about social media and mental health?",
-    "What are your thoughts on the global shift towards renewable energy?",
-    "Should there be universal basic income as automation increases?",
-    "What's your perspective on the debate over privacy vs security in digital age?",
-    "How do you view the role of cryptocurrencies in the future economy?",
-    "What are the implications of remote work becoming permanent for many?",
-    "Should big tech companies be broken up or regulated more strictly?",
-    "What's your opinion on the ethics of genetic engineering and CRISPR?",
-    "How should we approach climate change mitigation vs adaptation strategies?",
-    "What are your thoughts on the space race and commercial space travel?",
-    "Should there be limits on political advertising on social media platforms?",
-    "What's your perspective on the gig economy and worker rights?",
-    "How do you view the debate over nuclear energy vs renewables?",
-    "What are the implications of quantum computing for cybersecurity?",
-    "Should artificial intelligence development be regulated internationally?",
-    "What's your take on the metaverse and virtual reality adoption?",
-    "How should we handle the growing wealth inequality globally?",
-    "What are your thoughts on electric vehicles replacing traditional cars?",
-    "Should social media platforms be held liable for content spread on them?"
+    "What do you think about AI taking over more jobs in the next few years?",
+    "Should social media companies be doing more to protect kids' mental health?",
+    "Are electric cars really the solution to climate change?",
+    "Do you think working from home should be permanent for most people?",
+    "Should billionaires be paying way more in taxes?",
+    "Is cryptocurrency just a bubble or the future of money?",
+    "Should we be worried about how much data tech companies collect on us?",
+    "Do you think universal basic income could actually work?",
+    "Are we moving too fast or too slow on climate change action?",
+    "Should there be age limits for politicians?",
+    "Is nuclear energy safe enough to rely on more heavily?",
+    "Should big tech companies like Facebook and Google be broken up?",
+    "Do you think space exploration is worth the massive costs?",
+    "Should genetic engineering of humans be allowed?",
+    "Are we too dependent on our smartphones and social media?"
   ];
 
   const selectedTopic = topics[Math.floor(Math.random() * topics.length)];
   
   return {
     topics: [selectedTopic],
-    source: "Current Trending Debates",
+    source: "Current Hot Topics",
     timestamp: new Date().toISOString()
   };
 }
 
-// Main news fetching function with multiple fallbacks
-async function fetchNewsFromMultipleSources() {
-  const fetchMethods = [
-    { name: 'RSS Feeds', fn: fetchFromRSSFeeds },
-    { name: 'Reddit', fn: fetchFromReddit },
-    { name: 'Hacker News', fn: fetchFromHackerNews },
-    { name: 'NewsAPI', fn: fetchFromNewsAPI }
-  ];
-
-  // Shuffle methods for variety
-  const shuffledMethods = fetchMethods.sort(() => Math.random() - 0.5);
-
-  for (const method of shuffledMethods) {
-    try {
-      console.log(`🔄 Trying news source: ${method.name}`);
-      const result = await method.fn();
-      console.log(`✅ Successfully fetched from ${method.name}: ${result.topics.length} topics`);
-      return result;
-    } catch (error) {
-      console.log(`❌ ${method.name} failed: ${error.message}`);
-      continue;
-    }
+// Main news fetching function
+async function fetchLatestNews() {
+  try {
+    console.log('🔄 Fetching latest news from RSS feeds...');
+    return await fetchFromRSSFeeds();
+  } catch (error) {
+    console.log('⚠️ All RSS feeds failed, using curated topics');
+    return getCuratedTopics();
   }
-
-  // Final fallback to curated topics
-  console.log('🔄 All news sources failed, using curated topics');
-  return getCuratedCurrentTopics();
 }
 
-// ==================== AI RESPONSE FUNCTIONS ====================
+// ==================== ENHANCED AI RESPONSES ====================
 
-// Enhanced AI response with retry logic
-async function getHuggingFaceChatResponse(personality, topic, recentMessages, isResponse = false) {
+async function getHumanLikeAIResponse(personality, topic, recentMessages, isResponse = false) {
   const aiData = AI_PERSONALITIES[personality];
   
   if (!process.env.HUGGINGFACE_API_KEY) {
     throw new Error('No Hugging Face API key found');
   }
 
-  const context = recentMessages
-    .filter(m => m.ai !== 'system')
-    .slice(-3)
-    .map(msg => `${msg.ai}: ${msg.text}`)
-    .join('\n');
-
   let conversationPrompt;
+  
   if (isResponse && recentMessages.length > 0) {
     const lastMessage = recentMessages[recentMessages.length - 1];
-    conversationPrompt = `You are in a live debate. ${lastMessage.ai} just said: "${lastMessage.text}"\n\nRespond directly to what they said as ${aiData.name}. Use "I", "me", "my" when speaking. Be conversational and engage with their point.`;
+    const context = recentMessages
+      .filter(m => m.ai !== 'system')
+      .slice(-2)
+      .map(msg => `${msg.ai}: ${msg.text}`)
+      .join('\n');
+    
+    conversationPrompt = `Previous conversation:
+${context}
+
+${lastMessage.ai} just said: "${lastMessage.text}"
+
+Respond to them as ${aiData.name} in a natural, human way. React to their specific point. Use casual language, contractions, and express your personal opinion. Keep it under 25 words and sound like you're talking to friends.`;
   } else {
-    conversationPrompt = `You are starting a debate about: "${topic}"\n\nGive your opening perspective as ${aiData.name}. Use "I", "me", "my" when speaking. Be conversational and state your position clearly.`;
+    conversationPrompt = `Topic: "${topic}"
+
+Give your immediate reaction as ${aiData.name}. Speak like a regular person having a casual conversation with friends. Use contractions, personal opinions, and natural language. Keep it under 25 words and jump right into your perspective.`;
   }
 
-  console.log(`🤖 ${personality} generating ${isResponse ? 'response' : 'opening'}...`);
+  console.log(`🤖 ${personality} generating human-like ${isResponse ? 'response' : 'opening'}...`);
 
   const models = [
     "Qwen/Qwen2.5-7B-Instruct",
@@ -452,7 +279,7 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages, is
       console.log(`🔄 Trying model: ${model}`);
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       const response = await fetch(
         "https://api-inference.huggingface.co/models/" + model + "/v1/chat/completions",
@@ -468,8 +295,9 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages, is
               { role: "system", content: aiData.systemPrompt },
               { role: "user", content: conversationPrompt }
             ],
-            max_tokens: 100,
-            temperature: 0.9,
+            max_tokens: 60,
+            temperature: 0.95,
+            top_p: 0.9,
             stream: false
           }),
           signal: controller.signal
@@ -488,17 +316,22 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages, is
       if (result.choices && result.choices[0] && result.choices[0].message) {
         let aiResponse = result.choices[0].message.content.trim();
         
-        // Ensure first person usage
+        // Clean up the response to make it more human
         aiResponse = aiResponse
-          .replace(/\bAlex thinks?\b/gi, 'I think')
-          .replace(/\bLuna believes?\b/gi, 'I believe')
-          .replace(/\bRex questions?\b/gi, 'I question')
-          .replace(/\bSage suggests?\b/gi, 'I suggest')
-          .replace(/\b(Alex|Luna|Rex|Sage)'s perspective\b/gi, 'My perspective')
-          .replace(/\b(Alex|Luna|Rex|Sage) would\b/gi, 'I would');
+          .replace(/^["\']|["\']$/g, '') // Remove quotes
+          .replace(/\b(Alex|Luna|Rex|Sage)\s*(thinks?|believes?|says?|responds?)\s*/gi, '') // Remove self-references
+          .replace(/\bAs (Alex|Luna|Rex|Sage),?\s*/gi, '') // Remove "As Alex,"
+          .replace(/\b(Alex|Luna|Rex|Sage)'s (perspective|view|opinion)\s*/gi, 'My ') // Fix perspective
+          .replace(/\.\s*$/, '') // Remove trailing period for more casual feel
+          .trim();
         
-        if (aiResponse && aiResponse.length > 15) {
-          console.log(`✅ ${personality} (${model}): ${aiResponse}`);
+        // Ensure it's not too long
+        if (aiResponse.length > 150) {
+          aiResponse = aiResponse.substring(0, 147) + '...';
+        }
+        
+        if (aiResponse && aiResponse.length > 10 && aiResponse.length < 200) {
+          console.log(`✅ ${personality} (${model}): "${aiResponse}"`);
           return aiResponse;
         }
       }
@@ -509,21 +342,53 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages, is
     }
   }
 
-  throw new Error(`All AI models failed for ${personality}`);
+  // Fallback responses if all models fail
+  const fallbackResponses = {
+    alex: [
+      "Look, I think we need to focus on what actually works here.",
+      "Here's the thing - let's look at the data on this.",
+      "I mean, from a practical standpoint, this makes sense.",
+      "Honestly, the economics of this situation are pretty clear."
+    ],
+    luna: [
+      "I really think we need to consider the human impact here.",
+      "This is about doing what's right, you know?",
+      "I'm passionate about this - we can't ignore the ethical side.",
+      "We need to think about how this affects real people."
+    ],
+    rex: [
+      "Wait a minute, that doesn't quite add up to me.",
+      "I'm not buying it - there's got to be more to this story.",
+      "Hold on, are we missing something important here?",
+      "Come on, let's think critically about this for a second."
+    ],
+    sage: [
+      "You know, I think there's truth on both sides here.",
+      "Let me put it this way - we need to find balance.",
+      "I see where everyone's coming from on this issue.",
+      "The way I see it, there's a middle ground we can find."
+    ]
+  };
+
+  const fallback = fallbackResponses[personality];
+  const selectedFallback = fallback[Math.floor(Math.random() * fallback.length)];
+  console.log(`🔄 Using fallback response for ${personality}: "${selectedFallback}"`);
+  return selectedFallback;
 }
 
-// Smart speaker selection for real conversations
+// Smart speaker selection for natural conversation flow
 function selectNextSpeaker(lastSpeaker, recentSpeakers) {
   const ais = Object.keys(AI_PERSONALITIES);
   const availableAIs = ais.filter(ai => ai !== lastSpeaker);
   
-  if (lastSpeaker === 'luna') {
-    return Math.random() > 0.5 ? 'rex' : 'alex';
-  } else if (lastSpeaker === 'rex') {
-    return Math.random() > 0.5 ? 'luna' : 'sage';
-  } else if (lastSpeaker === 'alex') {
+  // Create more natural conversation flow
+  if (lastSpeaker === 'luna') { // Idealist often challenged by skeptic
+    return Math.random() > 0.4 ? 'rex' : 'alex';
+  } else if (lastSpeaker === 'rex') { // Skeptic often gets mediated or countered
+    return Math.random() > 0.4 ? 'sage' : 'luna';
+  } else if (lastSpeaker === 'alex') { // Pragmatist gets idealistic or skeptical responses
     return Math.random() > 0.5 ? 'luna' : 'rex';
-  } else if (lastSpeaker === 'sage') {
+  } else if (lastSpeaker === 'sage') { // Mediator can be followed by anyone
     return availableAIs[Math.floor(Math.random() * availableAIs.length)];
   }
   
@@ -534,11 +399,11 @@ let debateInterval;
 let topicRefreshTimer;
 let conversationFlow = [];
 
-// Start conversation loop with better error handling
+// Start conversation loop
 function startConversationLoop() {
   if (debateInterval) return;
   
-  console.log('🎬 Starting conversation loop...');
+  console.log('🎬 Starting human-like conversation loop...');
   
   debateInterval = setInterval(async () => {
     try {
@@ -563,7 +428,7 @@ function startConversationLoop() {
 
       console.log(`🎤 ${speakingAI} ${isResponse ? 'responding to' : 'opening with'} ${lastMessage ? lastMessage.ai : 'topic'}...`);
       
-      const response = await getHuggingFaceChatResponse(
+      const response = await getHumanLikeAIResponse(
         speakingAI,
         currentDebate.topic,
         nonSystemMessages,
@@ -575,7 +440,7 @@ function startConversationLoop() {
         ai: speakingAI,
         text: response,
         timestamp: new Date().toISOString(),
-        reactions: Math.floor(Math.random() * 50) + 15
+        reactions: Math.floor(Math.random() * 40) + 20
       };
 
       currentDebate.messages.push(newMessage);
@@ -584,10 +449,10 @@ function startConversationLoop() {
       }
 
       currentDebate.scores[speakingAI] += Math.floor(Math.random() * 3) + 1;
-      currentDebate.viewers += Math.floor(Math.random() * 30) - 15;
-      currentDebate.viewers = Math.max(850, Math.min(4500, currentDebate.viewers));
+      currentDebate.viewers += Math.floor(Math.random() * 25) - 12;
+      currentDebate.viewers = Math.max(900, Math.min(3500, currentDebate.viewers));
 
-      console.log(`📤 Broadcasting new message from ${speakingAI}`);
+      console.log(`📤 Broadcasting message: "${response}"`);
       broadcast({
         type: 'new_message',
         message: newMessage,
@@ -601,7 +466,7 @@ function startConversationLoop() {
       const errorMessage = {
         id: Date.now(),
         ai: 'system',
-        text: `⚠️ Processing latest updates...`,
+        text: `⚠️ Getting the AIs back on track...`,
         timestamp: new Date().toISOString()
       };
       
@@ -614,7 +479,7 @@ function startConversationLoop() {
       });
     }
 
-  }, 12000 + Math.random() * 8000);
+  }, 8000 + Math.random() * 7000); // Faster, more natural conversation timing
 
   // Topic refresh timer
   topicRefreshTimer = setInterval(async () => {
@@ -625,24 +490,24 @@ function startConversationLoop() {
         let newTopic, newSource;
         
         try {
-          const newNewsData = await fetchNewsFromMultipleSources();
+          const newNewsData = await fetchLatestNews();
           newTopic = newNewsData.topics[Math.floor(Math.random() * newNewsData.topics.length)];
           newSource = newNewsData.source;
         } catch (error) {
-          const fallbackData = getCuratedCurrentTopics();
+          const fallbackData = getCuratedTopics();
           newTopic = fallbackData.topics[0];
           newSource = fallbackData.source;
         }
         
         currentDebate.topic = newTopic;
         currentDebate.newsSource = newSource;
-        currentDebate.topicTimer = 1500;
+        currentDebate.topicTimer = 1200; // 20 minutes per topic
         conversationFlow = [];
         
         const systemMessage = {
           id: Date.now(),
           ai: 'system',
-          text: `🔄 New topic: ${newTopic} (${newSource})`,
+          text: `🔄 New discussion: ${newTopic} (${newSource})`,
           timestamp: new Date().toISOString()
         };
         
@@ -679,23 +544,22 @@ async function startDebate() {
   }
   
   try {
-    console.log('🔄 Starting AI debate...');
+    console.log('🔄 Starting human-like AI debate...');
     console.log(`🔑 Environment check:`);
     console.log(`   HUGGINGFACE_API_KEY: ${process.env.HUGGINGFACE_API_KEY ? 'Found' : 'Missing'}`);
-    console.log(`   NEWS_API_KEY: ${process.env.NEWS_API_KEY ? 'Found' : 'Missing (optional)'}`);
     
     let selectedTopic, newsSource;
     
-    // Try to fetch news from multiple sources
+    // Fetch news from RSS feeds only
     try {
-      console.log('🔄 Attempting to fetch fresh news for debate...');
-      const newsData = await fetchNewsFromMultipleSources();
+      console.log('🔄 Fetching fresh news from RSS feeds...');
+      const newsData = await fetchLatestNews();
       selectedTopic = newsData.topics[Math.floor(Math.random() * newsData.topics.length)];
       newsSource = newsData.source;
       console.log(`✅ Got topic from ${newsSource}: ${selectedTopic}`);
     } catch (newsError) {
-      console.log('⚠️ All news sources failed, using curated topics...');
-      const fallbackData = getCuratedCurrentTopics();
+      console.log('⚠️ RSS feeds failed, using curated topics...');
+      const fallbackData = getCuratedTopics();
       selectedTopic = fallbackData.topics[0];
       newsSource = fallbackData.source;
     }
@@ -707,7 +571,7 @@ async function startDebate() {
     currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage: 0};
     conversationFlow = [];
     
-    const startMessage = `🔴 LIVE: AI Debate - "${currentDebate.topic}" (${newsSource})`;
+    const startMessage = `🔴 LIVE: Human-Like AI Debate - "${currentDebate.topic}" (${newsSource})`;
 
     currentDebate.messages.push({
       id: Date.now(),
@@ -722,25 +586,25 @@ async function startDebate() {
       debate: currentDebate
     });
 
-    console.log('🎬 Starting live debate...');
+    console.log('🎬 Starting natural conversation...');
     console.log(`📰 Topic: ${currentDebate.topic}`);
     console.log(`📡 Source: ${currentDebate.newsSource}`);
 
-    // Always start the conversation loop
+    // Start the conversation loop
     startConversationLoop();
 
   } catch (error) {
     console.error('❌ Failed to start debate:', error.message);
     
-    // Force start with a curated topic if everything fails
-    const forcedTopic = "What's your perspective on the impact of artificial intelligence on society?";
+    // Force start with a curated topic
+    const forcedTopic = "Do you think AI is moving too fast for society to keep up?";
     currentDebate.topic = forcedTopic;
-    currentDebate.newsSource = "Current debates";
+    currentDebate.newsSource = "Hot Topics";
     currentDebate.isLive = true;
     currentDebate.messages = [{
       id: Date.now(),
       ai: 'system',
-      text: `🔴 LIVE: AI Debate - "${forcedTopic}" (Current debates)`,
+      text: `🔴 LIVE: Human-Like AI Debate - "${forcedTopic}" (Hot Topics)`,
       timestamp: new Date().toISOString()
     }];
     
@@ -751,7 +615,6 @@ async function startDebate() {
     
     console.log('🎬 Started with forced topic after error');
     
-    // Start the conversation anyway
     setTimeout(() => {
       startConversationLoop();
     }, 3000);
@@ -788,7 +651,7 @@ app.get('/api/debate', (req, res) => {
 
 app.post('/api/debate/start', (req, res) => {
   startDebate();
-  res.json({ success: true, message: 'Live debate started!' });
+  res.json({ success: true, message: 'Human-like debate started!' });
 });
 
 app.post('/api/debate/stop', (req, res) => {
@@ -806,7 +669,7 @@ app.post('/api/chat', async (req, res) => {
   const respondingAI = Object.keys(AI_PERSONALITIES)[Math.floor(Math.random() * 4)];
   
   // Send immediate response
-  res.json({ success: true, message: 'Message sent to AIs!' });
+  res.json({ success: true, message: 'The AIs are thinking about your question!' });
   
   // Process AI response asynchronously
   setTimeout(async () => {
@@ -814,72 +677,27 @@ app.post('/api/chat', async (req, res) => {
       console.log(`💬 ${respondingAI} responding to chat: "${message}"`);
       
       const aiData = AI_PERSONALITIES[respondingAI];
-      const chatPrompt = `A viewer in the chat said: "${message}"\n\nRespond to them directly as ${aiData.name}. Use "I", "me", "my" when speaking. Be conversational and address their comment. Keep it to 1-2 sentences.`;
+      const chatPrompt = `A viewer in the chat just asked: "${message}"\n\nRespond to them directly as ${aiData.name}. Talk like you're chatting with a friend who just asked you something. Use casual language and give your honest opinion. Keep it conversational and under 25 words.`;
       
-      const models = ["Qwen/Qwen2.5-7B-Instruct", "microsoft/Phi-3.5-mini-instruct"];
+      const response = await getHumanLikeAIResponse(respondingAI, message, [], false);
       
-      for (const model of models) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-          const response = await fetch(
-            "https://api-inference.huggingface.co/models/" + model + "/v1/chat/completions",
-            {
-              headers: {
-                Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-                "Content-Type": "application/json",
-              },
-              method: "POST",
-              body: JSON.stringify({
-                model: model,
-                messages: [
-                  { role: "system", content: aiData.systemPrompt },
-                  { role: "user", content: chatPrompt }
-                ],
-                max_tokens: 80,
-                temperature: 0.8
-              }),
-              signal: controller.signal
-            }
-          );
-
-          clearTimeout(timeoutId);
-
-          if (response.ok) {
-            const result = await response.json();
-            if (result.choices && result.choices[0] && result.choices[0].message) {
-              let aiResponse = result.choices[0].message.content.trim();
-              
-              aiResponse = aiResponse
-                .replace(/\b(Alex|Luna|Rex|Sage)\b/gi, 'I')
-                .replace(/\bthe (pragmatist|idealist|skeptic|mediator)\b/gi, 'I');
-              
-              const aiMessage = {
-                id: Date.now(),
-                ai: respondingAI,
-                text: `@Chat: ${aiResponse}`,
-                timestamp: new Date().toISOString(),
-                reactions: Math.floor(Math.random() * 25) + 15,
-                isResponse: true
-              };
-              
-              currentDebate.messages.push(aiMessage);
-              
-              broadcast({
-                type: 'ai_chat_response',
-                message: aiMessage
-              });
-              
-              console.log(`✅ ${respondingAI} responded to chat: ${aiResponse}`);
-              break;
-            }
-          }
-        } catch (error) {
-          console.log(`❌ Chat response error with ${model}:`, error.message);
-          continue;
-        }
-      }
+      const aiMessage = {
+        id: Date.now(),
+        ai: respondingAI,
+        text: `Hey! ${response}`,
+        timestamp: new Date().toISOString(),
+        reactions: Math.floor(Math.random() * 30) + 20,
+        isResponse: true
+      };
+      
+      currentDebate.messages.push(aiMessage);
+      
+      broadcast({
+        type: 'ai_chat_response',
+        message: aiMessage
+      });
+      
+      console.log(`✅ ${respondingAI} responded to chat: "${response}"`);
       
     } catch (error) {
       console.error('Chat response failed:', error);
@@ -894,13 +712,8 @@ app.get('/health', (req, res) => {
     websockets: clients.size,
     debate: currentDebate.isLive ? 'live' : 'stopped',
     uptime: process.uptime(),
-    newsSourcesAvailable: [
-      'RSS Feeds (No API key needed)',
-      'Reddit (No API key needed)', 
-      'Hacker News (No API key needed)',
-      process.env.NEWS_API_KEY ? 'NewsAPI (Available)' : 'NewsAPI (Not configured)',
-      'Curated Topics (Fallback)'
-    ]
+    newsSource: 'RSS Feeds Only (CNN, BBC, Reuters, NPR, Guardian, WashPost)',
+    aiStyle: 'Human-like conversational dialogue'
   });
 });
 
@@ -912,7 +725,7 @@ app.get('*', (req, res) => {
 // WebSocket connection handling
 wss.on('connection', (ws, request) => {
   clients.add(ws);
-  console.log(`👤 Client connected from ${request.socket.remoteAddress}. Total: ${clients.size}`);
+  console.log(`👤 Client connected. Total: ${clients.size}`);
   
   // Send initial state
   ws.send(JSON.stringify({
@@ -946,26 +759,30 @@ wss.on('connection', (ws, request) => {
 
 // Start server
 server.listen(port, '0.0.0.0', () => {
-  console.log(`🚀 AI DEBATE ARENA WITH MULTIPLE NEWS SOURCES`);
+  console.log(`🚀 HUMAN-LIKE AI DEBATE ARENA WITH RSS NEWS`);
   console.log(`🌐 Server running on port ${port}`);
   console.log(`🔑 Environment Variables Check:`);
   console.log(`   HUGGINGFACE_API_KEY: ${process.env.HUGGINGFACE_API_KEY ? '✅ Connected' : '❌ Missing'}`);
-  console.log(`   NEWS_API_KEY: ${process.env.NEWS_API_KEY ? '✅ Available' : '⚠️ Not configured (optional)'}`);
   
-  console.log(`📰 News Sources Available:`);
-  console.log(`   ✅ RSS Feeds (CNN, BBC, Reuters, NPR, Guardian, WashPost)`);
-  console.log(`   ✅ Reddit API (r/news, r/worldnews, r/technology, r/science)`);
-  console.log(`   ✅ Hacker News API`);
-  console.log(`   ${process.env.NEWS_API_KEY ? '✅' : '⚠️'} NewsAPI ${process.env.NEWS_API_KEY ? '(Available)' : '(Not configured)'}`);
+  console.log(`📰 News Sources (RSS Only):`);
+  console.log(`   ✅ CNN RSS Feed`);
+  console.log(`   ✅ BBC RSS Feed`);
+  console.log(`   ✅ Reuters RSS Feed`);
+  console.log(`   ✅ NPR RSS Feed`);
+  console.log(`   ✅ Guardian RSS Feed`);
+  console.log(`   ✅ Washington Post RSS Feed`);
   console.log(`   ✅ Curated Current Topics (Fallback)`);
   
-  console.log(`🤖 Real AI conversations with live news topics!`);
-  console.log(`🔗 WebSocket server attached to HTTP server`);
+  console.log(`🤖 AI Conversation Style:`);
+  console.log(`   ✅ Human-like dialogue with contractions`);
+  console.log(`   ✅ Natural opinions and reactions`);
+  console.log(`   ✅ Casual conversational tone`);
+  console.log(`   ✅ Personal expressions and emotions`);
   
   if (!process.env.HUGGINGFACE_API_KEY) {
     console.log(`❌ CRITICAL: Hugging Face API key missing - AI responses will fail`);
   } else {
-    console.log(`🎯 Ready for connections! No Twitter API needed.`);
+    console.log(`🎯 Ready for natural conversations with fresh RSS news!`);
   }
 });
 
