@@ -1,4 +1,4 @@
-// server.js - Fixed AI Debate Arena with Real Conversations
+// server.js - Fixed Syntax - Complete Working AI Debate Arena
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
@@ -72,7 +72,7 @@ function broadcast(data) {
   });
 }
 
-// ONLY fetch news from Twitter - no fallback topics
+// Fetch news from Twitter (optional)
 async function fetchNewsFromTwitter() {
   if (!process.env.TWITTER_BEARER_TOKEN) {
     console.log('❌ TWITTER_BEARER_TOKEN not found in environment variables');
@@ -81,18 +81,11 @@ async function fetchNewsFromTwitter() {
 
   try {
     console.log('📡 Fetching latest breaking news from Twitter...');
-    console.log(`🔑 Token length: ${process.env.TWITTER_BEARER_TOKEN.length} characters`);
-    console.log(`🔑 Token starts with: ${process.env.TWITTER_BEARER_TOKEN.substring(0, 10)}...`);
-    
-    // Pick a random news source
     const newsSource = NEWS_SOURCES[Math.floor(Math.random() * NEWS_SOURCES.length)];
     console.log(`📰 Fetching from @${newsSource}...`);
 
-    // Search for recent tweets from this news source
     const query = `from:${newsSource} -is:retweet -is:reply`;
     const url = `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=15&tweet.fields=created_at,public_metrics&user.fields=name,username`;
-    
-    console.log(`🔗 API URL: ${url}`);
 
     const response = await fetch(url, {
       headers: {
@@ -101,53 +94,33 @@ async function fetchNewsFromTwitter() {
       }
     });
 
-    console.log(`📡 Response status: ${response.status}`);
-    console.log(`📡 Response headers:`, response.headers);
-
     if (!response.ok) {
       const errorText = await response.text();
       console.log(`❌ Twitter API error: ${response.status} - ${errorText}`);
-      
-      if (response.status === 401) {
-        throw new Error(`Twitter API Authentication Failed - Check your Bearer Token`);
-      } else if (response.status === 403) {
-        throw new Error(`Twitter API Access Denied - Check your app permissions`);
-      } else if (response.status === 429) {
-        throw new Error(`Twitter API Rate Limited - Try again later`);
-      } else {
-        throw new Error(`Twitter API failed: ${response.status} - ${errorText}`);
-      }
+      throw new Error(`Twitter API failed: ${response.status}`);
     }
 
     const data = await response.json();
     
     if (!data.data || data.data.length === 0) {
-      console.log(`📰 No recent tweets found from @${newsSource}, trying another source...`);
+      console.log(`📰 No recent tweets found from @${newsSource}`);
       throw new Error('No tweets found');
     }
 
-    // Extract debate topics from tweets
-    const tweets = data.data.slice(0, 8); // Take top 8 tweets
+    // Convert tweets to debate topics
+    const tweets = data.data.slice(0, 8);
     const topics = tweets.map(tweet => {
-      // Clean up tweet text to create debate topic
       let topic = tweet.text
-        .replace(/https?:\/\/[^\s]+/g, '') // Remove URLs
-        .replace(/@\w+/g, '') // Remove mentions
-        .replace(/\n+/g, ' ') // Replace newlines
-        .replace(/[📰🚨⚡️🔥💥]/g, '') // Remove news emojis
+        .replace(/https?:\/\/[^\s]+/g, '')
+        .replace(/@\w+/g, '')
+        .replace(/\n+/g, ' ')
+        .replace(/[📰🚨⚡️🔥💥]/g, '')
         .trim()
-        .substring(0, 120); // Limit length
+        .substring(0, 120);
       
-      // Convert to debate format - make it more conversational
       if (topic.length > 25) {
         if (topic.includes('?')) {
           return topic.split('?')[0] + '?';
-        } else if (topic.toLowerCase().includes('biden') || topic.toLowerCase().includes('trump') || topic.toLowerCase().includes('election')) {
-          return `What do you think about this political development: ${topic}?`;
-        } else if (topic.toLowerCase().includes('climate') || topic.toLowerCase().includes('environment')) {
-          return `How should we respond to this environmental issue: ${topic}?`;
-        } else if (topic.toLowerCase().includes('tech') || topic.toLowerCase().includes('ai') || topic.toLowerCase().includes('crypto')) {
-          return `What are the implications of this tech news: ${topic}?`;
         } else {
           return `What's your take on this breaking news: ${topic}?`;
         }
@@ -172,7 +145,7 @@ async function fetchNewsFromTwitter() {
   }
 }
 
-// Enhanced AI response that creates real conversations
+// Enhanced AI response with first person speech
 async function getHuggingFaceChatResponse(personality, topic, recentMessages, isResponse = false) {
   const aiData = AI_PERSONALITIES[personality];
   
@@ -180,7 +153,6 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages, is
     throw new Error('No Hugging Face API key found');
   }
 
-  // Build conversation context - focus on the last 3 messages for better flow
   const context = recentMessages
     .filter(m => m.ai !== 'system')
     .slice(-3)
@@ -217,14 +189,8 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages, is
           body: JSON.stringify({
             model: model,
             messages: [
-              {
-                role: "system",
-                content: aiData.systemPrompt
-              },
-              {
-                role: "user", 
-                content: conversationPrompt
-              }
+              { role: "system", content: aiData.systemPrompt },
+              { role: "user", content: conversationPrompt }
             ],
             max_tokens: 100,
             temperature: 0.9,
@@ -266,32 +232,169 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages, is
 // Smart speaker selection for real conversations
 function selectNextSpeaker(lastSpeaker, recentSpeakers) {
   const ais = Object.keys(AI_PERSONALITIES);
-  
-  // Remove last speaker from options
   const availableAIs = ais.filter(ai => ai !== lastSpeaker);
   
-  // Smart selection based on personality dynamics
   if (lastSpeaker === 'luna') {
-    // After Luna (idealist), Rex (skeptic) or Alex (pragmatist) should respond
     return Math.random() > 0.5 ? 'rex' : 'alex';
   } else if (lastSpeaker === 'rex') {
-    // After Rex (skeptic), Luna (idealist) or Sage (mediator) should respond
     return Math.random() > 0.5 ? 'luna' : 'sage';
   } else if (lastSpeaker === 'alex') {
-    // After Alex (pragmatist), Luna (idealist) or Rex (skeptic) should respond
     return Math.random() > 0.5 ? 'luna' : 'rex';
   } else if (lastSpeaker === 'sage') {
-    // After Sage (mediator), anyone can respond
     return availableAIs[Math.floor(Math.random() * availableAIs.length)];
   }
   
-  // Default random selection
   return availableAIs[Math.floor(Math.random() * availableAIs.length)];
 }
 
 let debateInterval;
+let topicRefreshTimer;
 let conversationFlow = [];
 
+// Start conversation loop
+function startConversationLoop() {
+  if (debateInterval) return;
+  
+  console.log('🎬 Starting conversation loop...');
+  
+  debateInterval = setInterval(async () => {
+    try {
+      const nonSystemMessages = currentDebate.messages.filter(m => m.ai !== 'system');
+      const lastMessage = nonSystemMessages[nonSystemMessages.length - 1];
+      
+      let speakingAI;
+      let isResponse = false;
+      
+      if (lastMessage && lastMessage.ai !== 'system') {
+        speakingAI = selectNextSpeaker(lastMessage.ai, conversationFlow.slice(-3));
+        isResponse = true;
+      } else {
+        speakingAI = Object.keys(AI_PERSONALITIES)[Math.floor(Math.random() * 4)];
+        isResponse = false;
+      }
+      
+      conversationFlow.push(speakingAI);
+      if (conversationFlow.length > 10) {
+        conversationFlow = conversationFlow.slice(-8);
+      }
+
+      console.log(`🎤 ${speakingAI} ${isResponse ? 'responding to' : 'opening with'} ${lastMessage ? lastMessage.ai : 'topic'}...`);
+      
+      const response = await getHuggingFaceChatResponse(
+        speakingAI,
+        currentDebate.topic,
+        nonSystemMessages,
+        isResponse
+      );
+      
+      const newMessage = {
+        id: Date.now(),
+        ai: speakingAI,
+        text: response,
+        timestamp: new Date().toISOString(),
+        reactions: Math.floor(Math.random() * 50) + 15
+      };
+
+      currentDebate.messages.push(newMessage);
+      if (currentDebate.messages.length > 50) {
+        currentDebate.messages = currentDebate.messages.slice(-40);
+      }
+
+      currentDebate.scores[speakingAI] += Math.floor(Math.random() * 3) + 1;
+      currentDebate.viewers += Math.floor(Math.random() * 30) - 15;
+      currentDebate.viewers = Math.max(850, Math.min(4500, currentDebate.viewers));
+
+      broadcast({
+        type: 'new_message',
+        message: newMessage,
+        scores: currentDebate.scores,
+        viewers: currentDebate.viewers
+      });
+
+    } catch (error) {
+      console.error(`❌ Conversation error:`, error.message);
+      
+      const errorMessage = {
+        id: Date.now(),
+        ai: 'system',
+        text: `⚠️ Processing latest updates...`,
+        timestamp: new Date().toISOString()
+      };
+      
+      currentDebate.messages.push(errorMessage);
+      broadcast({
+        type: 'new_message',
+        message: errorMessage,
+        scores: currentDebate.scores,
+        viewers: currentDebate.viewers
+      });
+    }
+
+  }, 12000 + Math.random() * 8000);
+
+  // Topic refresh timer
+  topicRefreshTimer = setInterval(async () => {
+    currentDebate.topicTimer--;
+    
+    if (currentDebate.topicTimer <= 0) {
+      try {
+        let newTopic, newSource;
+        
+        try {
+          const newNewsData = await fetchNewsFromTwitter();
+          newTopic = newNewsData.topics[Math.floor(Math.random() * newNewsData.topics.length)];
+          newSource = `Breaking from @${newNewsData.source}`;
+        } catch (error) {
+          const currentTopics = [
+            "What's your take on the latest developments in artificial intelligence?",
+            "How should society handle the growing influence of social media?", 
+            "What are your thoughts on the current state of climate action?",
+            "Should cryptocurrencies be regulated more strictly?",
+            "What's your perspective on remote work vs office policies?",
+            "How do you view recent advances in space exploration?",
+            "What are the implications of rising automation in the workplace?",
+            "Should big tech companies face more privacy regulations?",
+            "What's your opinion on renewable energy adoption?",
+            "How should we approach the ethics of genetic engineering?"
+          ];
+          newTopic = currentTopics[Math.floor(Math.random() * currentTopics.length)];
+          newSource = "Trending debates";
+        }
+        
+        currentDebate.topic = newTopic;
+        currentDebate.newsSource = newSource;
+        currentDebate.topicTimer = 1500;
+        conversationFlow = [];
+        
+        const systemMessage = {
+          id: Date.now(),
+          ai: 'system',
+          text: `🔄 New topic: ${newTopic} (${newSource})`,
+          timestamp: new Date().toISOString()
+        };
+        
+        currentDebate.messages.push(systemMessage);
+        
+        broadcast({
+          type: 'topic_change',
+          topic: newTopic,
+          source: newSource,
+          timer: currentDebate.topicTimer,
+          message: systemMessage
+        });
+      } catch (error) {
+        currentDebate.topicTimer = 300;
+      }
+    } else {
+      broadcast({
+        type: 'timer_update',
+        timer: currentDebate.topicTimer
+      });
+    }
+  }, 1000);
+}
+
+// Start debate function
 async function startDebate() {
   if (debateInterval) return;
   
@@ -312,7 +415,6 @@ async function startDebate() {
     } catch (newsError) {
       console.log('⚠️ Twitter news fetch failed, using curated current topics...');
       
-      // Current trending topics as fallback
       const currentTopics = [
         "What's your take on the latest AI breakthrough in autonomous vehicles?",
         "How should we respond to the growing concerns about social media addiction?",
@@ -320,9 +422,9 @@ async function startDebate() {
         "Should governments regulate cryptocurrency more strictly?",
         "What's your perspective on the debate over remote work policies?",
         "How do you view the latest developments in space exploration?",
-        "What are your thoughts on the current state of global supply chains?",
+        "What's your opinion on the current state of global supply chains?",
         "Should there be more regulations on data privacy and big tech?",
-        "What's your opinion on the rise of renewable energy investments?",
+        "What's your take on the rise of renewable energy investments?",
         "How should society handle the ethics of genetic engineering?"
       ];
       
@@ -331,12 +433,14 @@ async function startDebate() {
     }
     
     currentDebate.topic = selectedTopic;
-    currentDebate.newsSource = `Breaking from @${newsData.source}`;
+    currentDebate.newsSource = newsSource;
     currentDebate.isLive = true;
-    currentDebate.messages = []; // Clear previous messages
-    conversationFlow = []; // Reset conversation flow
+    currentDebate.messages = [];
+    conversationFlow = [];
     
-    const startMessage = `🔴 LIVE: Breaking News Debate - "${currentDebate.topic}" (${currentDebate.newsSource})`;
+    const startMessage = newsSource.includes('Breaking') 
+      ? `🔴 LIVE: Breaking News Debate - "${currentDebate.topic}" (${newsSource})`
+      : `🔴 LIVE: AI Debate - "${currentDebate.topic}" (${newsSource})`;
 
     currentDebate.messages.push({
       id: Date.now(),
@@ -350,129 +454,12 @@ async function startDebate() {
       debate: currentDebate
     });
 
-    console.log('🎬 Starting live news debate...');
+    console.log('🎬 Starting live debate...');
     console.log(`📰 Topic: ${currentDebate.topic}`);
+    console.log(`📡 Source: ${currentDebate.newsSource}`);
 
-    // Start the conversation loop
-    debateInterval = setInterval(async () => {
-      try {
-        const nonSystemMessages = currentDebate.messages.filter(m => m.ai !== 'system');
-        const lastMessage = nonSystemMessages[nonSystemMessages.length - 1];
-        
-        let speakingAI;
-        let isResponse = false;
-        
-        if (lastMessage && lastMessage.ai !== 'system') {
-          // Someone just spoke, select who responds
-          speakingAI = selectNextSpeaker(lastMessage.ai, conversationFlow.slice(-3));
-          isResponse = true;
-        } else {
-          // Opening statement - random AI starts
-          speakingAI = Object.keys(AI_PERSONALITIES)[Math.floor(Math.random() * 4)];
-          isResponse = false;
-        }
-        
-        conversationFlow.push(speakingAI);
-        if (conversationFlow.length > 10) {
-          conversationFlow = conversationFlow.slice(-8); // Keep recent history
-        }
-
-        console.log(`🎤 ${speakingAI} ${isResponse ? 'responding to' : 'opening with'} ${lastMessage ? lastMessage.ai : 'topic'}...`);
-        
-        const response = await getHuggingFaceChatResponse(
-          speakingAI,
-          currentDebate.topic,
-          nonSystemMessages,
-          isResponse
-        );
-        
-        const newMessage = {
-          id: Date.now(),
-          ai: speakingAI,
-          text: response,
-          timestamp: new Date().toISOString(),
-          reactions: Math.floor(Math.random() * 50) + 15
-        };
-
-        currentDebate.messages.push(newMessage);
-        if (currentDebate.messages.length > 50) {
-          currentDebate.messages = currentDebate.messages.slice(-40);
-        }
-
-        currentDebate.scores[speakingAI] += Math.floor(Math.random() * 3) + 1;
-        currentDebate.viewers += Math.floor(Math.random() * 30) - 15;
-        currentDebate.viewers = Math.max(850, Math.min(4500, currentDebate.viewers));
-
-        broadcast({
-          type: 'new_message',
-          message: newMessage,
-          scores: currentDebate.scores,
-          viewers: currentDebate.viewers
-        });
-
-      } catch (error) {
-        console.error(`❌ Conversation error:`, error.message);
-        
-        // If AI fails, try to continue with another AI
-        const errorMessage = {
-          id: Date.now(),
-          ai: 'system',
-          text: `⚠️ Processing latest news updates...`,
-          timestamp: new Date().toISOString()
-        };
-        
-        currentDebate.messages.push(errorMessage);
-        broadcast({
-          type: 'new_message',
-          message: errorMessage,
-          scores: currentDebate.scores,
-          viewers: currentDebate.viewers
-        });
-      }
-
-    }, 12000 + Math.random() * 8000); // 12-20 seconds between responses
-
-    // Topic refresh timer - get new news every 25 minutes
-    const topicTimer = setInterval(async () => {
-      currentDebate.topicTimer--;
-      
-      if (currentDebate.topicTimer <= 0) {
-        try {
-          const newNewsData = await fetchNewsFromTwitter();
-          const newTopic = newNewsData.topics[Math.floor(Math.random() * newNewsData.topics.length)];
-          
-          currentDebate.topic = newTopic;
-          currentDebate.newsSource = `Breaking from @${newNewsData.source}`;
-          currentDebate.topicTimer = 1500; // 25 minutes
-          conversationFlow = []; // Reset conversation flow for new topic
-          
-          const systemMessage = {
-            id: Date.now(),
-            ai: 'system',
-            text: `📰 BREAKING: ${newTopic} (${newNewsData.source})`,
-            timestamp: new Date().toISOString()
-          };
-          
-          currentDebate.messages.push(systemMessage);
-          
-          broadcast({
-            type: 'topic_change',
-            topic: newTopic,
-            source: newNewsData.source,
-            timer: currentDebate.topicTimer,
-            message: systemMessage
-          });
-        } catch (error) {
-          console.error('❌ Failed to refresh news:', error.message);
-          currentDebate.topicTimer = 300; // Try again in 5 minutes
-        }
-      } else {
-        broadcast({
-          type: 'timer_update',
-          timer: currentDebate.topicTimer
-        });
-      }
-    }, 1000);
+    // Always start the conversation loop
+    startConversationLoop();
 
   } catch (error) {
     console.error('❌ Failed to start debate:', error.message);
@@ -503,15 +490,14 @@ async function startDebate() {
   }
 }
 
-function startConversationLoop() {
-  if (debateInterval) return;
-  
-  console.log('🎬 Starting conversation loop...');
-
 function stopDebate() {
   if (debateInterval) {
     clearInterval(debateInterval);
     debateInterval = null;
+  }
+  if (topicRefreshTimer) {
+    clearInterval(topicRefreshTimer);
+    topicRefreshTimer = null;
   }
   currentDebate.isLive = false;
   currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage: 0};
@@ -529,7 +515,7 @@ app.get('/api/debate', (req, res) => {
 
 app.post('/api/debate/start', (req, res) => {
   startDebate();
-  res.json({ success: true, message: 'Live news debate started!' });
+  res.json({ success: true, message: 'Live debate started!' });
 });
 
 app.post('/api/debate/stop', (req, res) => {
@@ -544,14 +530,12 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: 'Invalid message or debate not live' });
   }
 
-  // FIXED: AI actually responds to chat messages
   const respondingAI = Object.keys(AI_PERSONALITIES)[Math.floor(Math.random() * 4)];
   
   setTimeout(async () => {
     try {
       console.log(`💬 ${respondingAI} responding to chat: "${message}"`);
       
-      // Create a chat-specific prompt that encourages first-person response
       const aiData = AI_PERSONALITIES[respondingAI];
       const chatPrompt = `A viewer in the chat said: "${message}"\n\nRespond to them directly as ${aiData.name}. Use "I", "me", "my" when speaking. Be conversational and address their comment. Keep it to 1-2 sentences.`;
       
@@ -584,7 +568,6 @@ app.post('/api/chat', async (req, res) => {
             if (result.choices && result.choices[0] && result.choices[0].message) {
               let aiResponse = result.choices[0].message.content.trim();
               
-              // Ensure first person
               aiResponse = aiResponse
                 .replace(/\b(Alex|Luna|Rex|Sage)\b/gi, 'I')
                 .replace(/\bthe (pragmatist|idealist|skeptic|mediator)\b/gi, 'I');
@@ -627,7 +610,7 @@ app.get('*', (req, res) => {
 });
 
 const server = app.listen(port, () => {
-  console.log(`🚀 LIVE NEWS AI DEBATE ARENA`);
+  console.log(`🚀 LIVE AI DEBATE ARENA`);
   console.log(`🔑 Environment Variables Check:`);
   console.log(`   HUGGINGFACE_API_KEY: ${process.env.HUGGINGFACE_API_KEY ? '✅ Connected' : '❌ Missing'}`);
   console.log(`   TWITTER_BEARER_TOKEN: ${process.env.TWITTER_BEARER_TOKEN ? '✅ Connected' : '❌ Missing'}`);
@@ -640,7 +623,6 @@ const server = app.listen(port, () => {
   console.log(`📰 News Sources: ${NEWS_SOURCES.length} accounts`);
   console.log(`🤖 Real AI conversations with ${process.env.TWITTER_BEARER_TOKEN ? 'live news' : 'curated topics'}!`);
   
-  // Test environment variables immediately
   if (!process.env.TWITTER_BEARER_TOKEN) {
     console.log(`⚠️  Twitter integration disabled - will use fallback topics`);
   }
