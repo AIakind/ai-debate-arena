@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Debate Arena - Live 24/7 AI vs AI Debates</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const AI_PERSONALITIES = {
+            alex: {
+                name: "Alex",
+                role: "The Pragmatist",
+                color: "bg-blue-500",
+                avatar: "🤖",
+                style: "Focuses on data, practical solutions, and real-world implementation"
+            },
+            luna: {
+                name: "Luna", 
+                role: "The Idealist",
+                color: "bg-purple-500",
+                avatar: "✨",
+                style: "Champions ethics, human values, and long-term vision"
+            },
+            rex: {
+                name: "Rex",
+                role: "The Skeptic", 
+                color: "bg-red-500",
+                avatar: "🔍",
+                style: "Questions assumptions, challenges arguments, plays devil's advocate"
+            },
+            sage: {
+                name: "Sage",
+                role: "The Mediator",
+                color: "bg-green-500", 
+                avatar: "🧠",
+                style: "Seeks common ground, asks clarifying questions, synthesizes viewpoints"
+            }
+        };
+
+        function AIDebateArena() {
+            const [debate, setDebate] = useState({
+                topic: "Loading...",
+                messages: [],
+                scores: {alex: 0, luna: 0, rex: 0, sage: 0},
+                isLive: false,
+                viewers: 1247,
+                topicTimer: 1800,
+                isNewsTopic: false
+            });
+            const [chatMessage, setChatMessage] = useState('');
+            const [connected, setConnected] = useState(false);
+            const messagesEndRef = useRef(null);
+            const wsRef = useRef(null);
+
+            const scrollToBottom = () => {
+                messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            };
+
+            useEffect(scrollToBottom, [debate.messages]);
+
+            // WebSocket connection
+            useEffect(() => {
+                const connectWebSocket = () => {
+                    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${wsProtocol}//${window.location.host}`;
+                    
+                    wsRef.current = new WebSocket(wsUrl);
+                    
+                    wsRef.current.onopen = () => {
+                        setConnected(true);
+                        console.log('Connected to AI Debate Arena');
+                    };
+                    
+                    wsRef.current.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        
+                        switch(data.type) {
+                            case 'initial_state':
+                                setDebate(data.debate);
+                                break;
+                            case 'debate_update':
+                                setDebate(data.debate);
+                                break;
+                            case 'new_message':
+                                setDebate(prev => ({
+                                    ...prev,
+                                    messages: [...prev.messages, data.message],
+                                    scores: data.scores,
+                                    viewers: data.viewers
+                                }));
+                                break;
+                            case 'topic_change':
+                                setDebate(prev => ({
+                                    ...prev,
+                                    topic: data.topic,
+                                    topicTimer: data.timer,
+                                    messages: [...prev.messages, data.message],
+                                    isNewsTopic: data.isNewsTopic
+                                }));
+                                break;
+                            case 'timer_update':
+                                setDebate(prev => ({
+                                    ...prev,
+                                    topicTimer: data.timer
+                                }));
+                                break;
+                            case 'ai_chat_response':
+                                setDebate(prev => ({
+                                    ...prev,
+                                    messages: [...prev.messages, data.message]
+                                }));
+                                break;
+                        }
+                    };
+                    
+                    wsRef.current.onclose = () => {
+                        setConnected(false);
+                        setTimeout(connectWebSocket, 3000); // Reconnect after 3 seconds
+                    };
+                    
+                    wsRef.current.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        setConnected(false);
+                    };
+                };
+                
+                connectWebSocket();
+                
+                return () => {
+                    if (wsRef.current) {
+                        wsRef.current.close();
+                    }
+                };
+            }, []);
+
+            const startDebate = async () => {
+                try {
+                    const response = await fetch('/api/debate/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    if (!response.ok) throw new Error('Failed to start debate');
+                } catch (error) {
+                    console.error('Error starting debate:', error);
+                }
+            };
+
+            const stopDebate = async () => {
+                try {
+                    const response = await fetch('/api/debate/stop', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    if (!response.ok) throw new Error('Failed to stop debate');
+                } catch (error) {
+                    console.error('Error stopping debate:', error);
+                }
+            };
+
+            const handleChatSubmit = async (e) => {
+                e.preventDefault();
+                if (!chatMessage.trim()) return;
+                
+                try {
+                    await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: chatMessage })
+                    });
+                    setChatMessage('');
+                } catch (error) {
+                    console.error('Error sending chat:', error);
+                }
+            };
+
+            const formatTime = (seconds) => {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${mins}:${secs.toString().padStart(2, '0')}`;
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-900 text-white">
+                    {/* Header */}
+                    <div className="bg-black p-4 border-b border-gray-700">
+                        <div className="max-w-6xl mx-auto flex items-center justify-between">
+                            <div className="flex items-center space-x-4">
+                                <h1 className="text-2xl font-bold text-purple-400">AI Debate Arena</h1>
+                                <div className="flex items-center space-x-2">
+                                    <div className={`w-3 h-3 rounded-full ${debate.isLive ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`}></div>
+                                    <span className="text-sm">{debate.isLive ? 'LIVE' : 'OFFLINE'}</span>
+                                </div>
+                                {debate.isNewsTopic && (
+                                    <div className="bg-red-600 px-2 py-1 rounded text-xs font-bold animate-pulse">
+                                        📰 BREAKING NEWS
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex items-center space-x-6">
+                                <div className="flex items-center space-x-2">
+                                    <span className="text-sm">👥 {debate.viewers?.toLocaleString() || 0}</span>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                                    <span className="text-xs">{connected ? 'Connected' : 'Connecting...'}</span>
+                                </div>
+                                <button
+                                    onClick={debate.isLive ? stopDebate : startDebate}
+                                    className={`px-4 py-2 rounded-lg ${
+                                        debate.isLive ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+                                    }`}
+                                >
+                                    {debate.isLive ? '⏸️ Stop' : '▶️ Start'} Stream
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="max-w-6xl mx-auto p-4 grid grid-cols-4 gap-4">
+                        {/* AI Personalities Panel */}
+                        <div className="col-span-1 space-y-4">
+                            <div className="bg-gray-800 rounded-lg p-4">
+                                <h3 className="text-lg font-semibold mb-4 flex items-center">
+                                    🏆 Debate Scores
+                                </h3>
+                                {Object.entries(AI_PERSONALITIES).map(([key, ai]) => (
+                                    <div key={key} className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center space-x-3">
+                                            <div className={`w-8 h-8 ${ai.color} rounded-full flex items-center justify-center text-sm`}>
+                                                {ai.avatar}
+                                            </div>
+                                            <div>
+                                                <div className="font-medium">{ai.name}</div>
+                                                <div className="text-xs text-gray-400">{ai.role}</div>
+                                            </div>
+                                        </div>
+                                        <div className="text-lg font-bold text-purple-400">{debate.scores[key] || 0}</div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="bg-gray-800 rounded-lg p-4">
+                                <h3 className="text-lg font-semibold mb-2 flex items-center">
+                                    ⏰ Topic Timer
+                                </h3>
+                                <div className="text-2xl font-mono text-center text-green-400">
+                                    {formatTime(debate.topicTimer)}
+                                </div>
+                                <div className="text-xs text-gray-400 text-center mt-1">
+                                    until next topic
+                                </div>
+                            </div>
+
+                            {/* Chat */}
+                            <div className="bg-gray-800 rounded-lg p-4">
+                                <h3 className="text-lg font-semibold mb-3">💬 Chat with AIs</h3>
+                                <form onSubmit={handleChatSubmit}>
+                                    <div className="flex space-x-2">
+                                        <input
+                                            type="text"
+                                            value={chatMessage}
+                                            onChange={(e) => setChatMessage(e.target.value)}
+                                            placeholder="Ask the AIs something..."
+                                            className="flex-1 bg-gray-700 rounded px-3 py-2 text-sm"
+                                            maxLength={100}
+                                        />
+                                        <button 
+                                            type="submit"
+                                            className="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded text-sm"
+                                        >
+                                            Send
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
+                        {/* Main Debate Area */}
+                        <div className="col-span-3">
+                            <div className="bg-gray-800 rounded-lg p-4 mb-4">
+                                <h2 className="text-xl font-semibold text-purple-400 mb-2">
+                                    {debate.isNewsTopic ? '📰 Breaking News Debate:' : '🎯 Current Topic:'}
+                                </h2>
+                                <p className="text-lg">{debate.topic}</p>
+                            </div>
+
+                            {/* Debate Feed */}
+                            <div className="bg-gray-800 rounded-lg h-96 flex flex-col">
+                                <div className="p-4 border-b border-gray-700">
+                                    <h3 className="text-lg font-semibold flex items-center">
+                                        💬 Live Debate
+                                    </h3>
+                                </div>
+                                
+                                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                    {debate.messages && debate.messages.length > 0 ? debate.messages.map((message) => {
+                                        if (message.ai === 'system') {
+                                            return (
+                                                <div key={message.id} className="text-center text-gray-400 text-sm py-2">
+                                                    {message.text}
+                                                </div>
+                                            );
+                                        }
+                                        
+                                        const ai = AI_PERSONALITIES[message.ai];
+                                        if (!ai) return null;
+                                        
+                                        return (
+                                            <div key={message.id} className={`flex space-x-3 ${message.isResponse ? 'bg-gray-700 p-2 rounded' : ''}`}>
+                                                <div className={`w-8 h-8 ${ai.color} rounded-full flex items-center justify-center flex-shrink-0`}>
+                                                    {ai.avatar}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <div className="flex items-center space-x-2">
+                                                            <span className="font-semibold text-sm">{ai.name}</span>
+                                                            <span className="text-xs text-gray-400">
+                                                                {new Date(message.timestamp).toLocaleTimeString()}
+                                                            </span>
+                                                            {message.isResponse && (
+                                                                <span className="text-xs bg-purple-600 px-2 py-1 rounded">
+                                                                    Responding to Chat
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {message.reactions && (
+                                                            <div className="flex items-center space-x-1 text-xs text-gray-400">
+                                                                <span>👍 {message.reactions}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm leading-relaxed">{message.text}</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    }) : (
+                                        <div className="text-center text-gray-400 py-8">
+                                            <p>🤖 AI personalities are ready to debate!</p>
+                                            <p className="text-sm mt-2">Click "Start Stream" to begin the live debate</p>
+                                        </div>
+                                    )}
+                                    <div ref={messagesEndRef} />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<AIDebateArena />, document.getElementById('root'));
+    </script>
+</body>
+</html>
