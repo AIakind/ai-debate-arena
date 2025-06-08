@@ -20,28 +20,28 @@ const AI_PERSONALITIES = {
     role: "The Pragmatist",
     color: "bg-blue-500",
     avatar: "🤖",
-    systemPrompt: `You are Alex, a practical person who focuses on real-world solutions. Speak like a regular human using contractions and casual phrases like "Look,", "Here's the thing,", "I mean,". Focus on economics and practical implications. Keep responses under 35 words and express personal opinions.`
+    systemPrompt: `You are Alex, a practical person who focuses on real-world solutions. Speak like a regular human using contractions and casual phrases like "Look,", "Here's the thing,", "I mean,". Focus on economics and practical implications. Keep responses conversational but complete your thoughts. Aim for 2-3 sentences that fully express your point.`
   },
   luna: {
     name: "Luna",
     role: "The Idealist",
     color: "bg-purple-500",
     avatar: "✨",
-    systemPrompt: `You are Luna, a passionate idealist who cares about human rights. Speak emotionally using phrases like "I really think,", "This matters because,", "We need to,". Focus on human impact and moral implications. Keep responses under 35 words with genuine emotion.`
+    systemPrompt: `You are Luna, a passionate idealist who cares about human rights. Speak emotionally using phrases like "I really think,", "This matters because,", "We need to,". Focus on human impact and moral implications. Keep responses conversational but complete your thoughts. Aim for 2-3 sentences that fully express your passion.`
   },
   rex: {
     name: "Rex",
     role: "The Skeptic",
     color: "bg-red-500",
     avatar: "🔍",
-    systemPrompt: `You are Rex, a sharp skeptic who questions everything. Use phrases like "Wait a minute,", "That doesn't make sense,", "I'm not buying it,". Question claims and point out issues. Keep responses under 35 words with doubt.`
+    systemPrompt: `You are Rex, a sharp skeptic who questions everything. Use phrases like "Wait a minute,", "That doesn't make sense,", "I'm not buying it,". Question claims and point out issues. Keep responses conversational but complete your thoughts. Aim for 2-3 sentences that fully express your doubts.`
   },
   sage: {
     name: "Sage",
     role: "The Mediator",
     color: "bg-green-500",
     avatar: "🧠",
-    systemPrompt: `You are Sage, a wise mediator who finds balance. Use phrases like "You know,", "I see both sides,", "The way I see it,". Find common ground and consider multiple perspectives. Keep responses under 35 words.`
+    systemPrompt: `You are Sage, a wise mediator who finds balance. Use phrases like "You know,", "I see both sides,", "The way I see it,". Find common ground and consider multiple perspectives. Keep responses conversational but complete your thoughts. Aim for 2-3 sentences that fully express your wisdom.`
   }
 };
 
@@ -223,7 +223,7 @@ ${context}
 
 ${lastMessage.ai} just said: "${lastMessage.text}"
 
-Respond to them as ${aiData.name} in a natural, human way. React to their specific point. Use casual language, contractions, and express your personal opinion. Keep it under 25 words and sound like you're talking to friends.`;
+Respond to them as ${aiData.name} in a natural, human way. React to their specific point. Use casual language, contractions, and express your personal opinion. Complete your thoughts in 2-3 sentences that fully express your perspective.`;
   } else {
     conversationPrompt = `Topic: "${topic}"
 
@@ -260,10 +260,11 @@ Give your immediate reaction as ${aiData.name}. Speak like a regular person havi
               { role: "system", content: aiData.systemPrompt },
               { role: "user", content: conversationPrompt }
             ],
-            max_tokens: 60,
-            temperature: 0.95,
+            max_tokens: 120,
+            temperature: 0.85,
             top_p: 0.9,
-            stream: false
+            stream: false,
+            stop: ["\n", ".", "!", "?"]
           }),
           signal: controller.signal
         }
@@ -281,20 +282,37 @@ Give your immediate reaction as ${aiData.name}. Speak like a regular person havi
       if (result.choices && result.choices[0] && result.choices[0].message) {
         let aiResponse = result.choices[0].message.content.trim();
         
+        // Clean up the response but preserve complete thoughts
         aiResponse = aiResponse
-          .replace(/^["\']|["\']$/g, '')
-          .replace(/\b(Alex|Luna|Rex|Sage)\s*(thinks?|believes?|says?|responds?)\s*/gi, '')
-          .replace(/\bAs (Alex|Luna|Rex|Sage),?\s*/gi, '')
-          .replace(/\b(Alex|Luna|Rex|Sage)'s (perspective|view|opinion)\s*/gi, 'My ')
+          .replace(/^["\']|["\']$/g, '') // Remove quotes
+          .replace(/\b(Alex|Luna|Rex|Sage)\s*(thinks?|believes?|says?|responds?)\s*/gi, '') // Remove self-references
+          .replace(/\bAs (Alex|Luna|Rex|Sage),?\s*/gi, '') // Remove "As Alex,"
+          .replace(/\b(Alex|Luna|Rex|Sage)'s (perspective|view|opinion)\s*/gi, 'My ') // Fix perspective
           .trim();
         
-        if (aiResponse.length > 150) {
-          aiResponse = aiResponse.substring(0, 147) + '...';
+        // Don't cut off responses - let them complete their thoughts
+        // Only trim if it's extremely long (over 250 characters)
+        if (aiResponse.length > 250) {
+          // Find the last complete sentence within reasonable length
+          const sentences = aiResponse.split(/[.!?]+/);
+          let truncated = '';
+          for (const sentence of sentences) {
+            if ((truncated + sentence).length < 200) {
+              truncated += sentence + (sentence.length > 0 ? '.' : '');
+            } else {
+              break;
+            }
+          }
+          aiResponse = truncated || aiResponse.substring(0, 180) + '...';
         }
         
-        if (aiResponse && aiResponse.length > 10 && aiResponse.length < 200) {
+        // Accept responses that are complete thoughts (minimum 8 words, max 250 chars)
+        const wordCount = aiResponse.split(' ').length;
+        if (aiResponse && wordCount >= 8 && aiResponse.length <= 250) {
           console.log(`✅ ${personality} (${model}): "${aiResponse}"`);
           return aiResponse;
+        } else {
+          console.log(`⚠️ Response too short or incomplete: "${aiResponse}" (${wordCount} words)`);
         }
       }
 
@@ -304,31 +322,31 @@ Give your immediate reaction as ${aiData.name}. Speak like a regular person havi
     }
   }
 
-  // Fallback responses
+  // Fallback responses - longer and more complete
   const fallbackResponses = {
     alex: [
-      "Look, I think we need to focus on what actually works here.",
-      "Here's the thing - let's look at the data on this.",
-      "I mean, from a practical standpoint, this makes sense.",
-      "Honestly, the economics of this situation are pretty clear."
+      "Look, I think we need to focus on what actually works here. The practical approach is usually the best one.",
+      "Here's the thing - let's look at the data on this. Numbers don't lie, and they're telling us something important.",
+      "I mean, from a practical standpoint, this makes total sense. We just need to implement it properly.",
+      "Honestly, the economics of this situation are pretty clear. Follow the money and you'll find the answer."
     ],
     luna: [
-      "I really think we need to consider the human impact here.",
-      "This is about doing what's right, you know?",
-      "I'm passionate about this - we can't ignore the ethical side.",
-      "We need to think about how this affects real people."
+      "I really think we need to consider the human impact here. People's lives are at stake, and that matters more than anything.",
+      "This is about doing what's right, you know? Sometimes we have to put morality above profit.",
+      "I'm passionate about this - we can't ignore the ethical side. Our values should guide our decisions.",
+      "We need to think about how this affects real people, especially the most vulnerable in our society."
     ],
     rex: [
-      "Wait a minute, that doesn't quite add up to me.",
-      "I'm not buying it - there's got to be more to this story.",
-      "Hold on, are we missing something important here?",
-      "Come on, let's think critically about this for a second."
+      "Wait a minute, that doesn't quite add up to me. Someone's not telling us the whole story here.",
+      "I'm not buying it - there's got to be more to this story. Let's dig deeper before we decide.",
+      "Hold on, are we missing something important here? This seems too simple to be the real answer.",
+      "Come on, let's think critically about this for a second. Who benefits from this narrative?"
     ],
     sage: [
-      "You know, I think there's truth on both sides here.",
-      "Let me put it this way - we need to find balance.",
-      "I see where everyone's coming from on this issue.",
-      "The way I see it, there's a middle ground we can find."
+      "You know, I think there's truth on both sides here. Maybe we can find a path that works for everyone.",
+      "Let me put it this way - we need to find balance. Extremes rarely lead to sustainable solutions.",
+      "I see where everyone's coming from on this issue. Each perspective has valid points worth considering.",
+      "The way I see it, there's a middle ground we can find if we listen to each other carefully."
     ]
   };
 
