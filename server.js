@@ -427,17 +427,29 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: 'Invalid message or debate not live' });
   }
 
-  res.json({ success: true, message: 'AI is thinking...' });
+  const respondingAI = Object.keys(AI_PERSONALITIES)[Math.floor(Math.random() * 4)];
+  
+  res.json({ success: true, message: 'AI is thinking about your question...' });
   
   setTimeout(async () => {
     try {
-      const respondingAI = Object.keys(AI_PERSONALITIES)[Math.floor(Math.random() * 4)];
-      const response = await getAIResponse(respondingAI, message, "User question", [], false);
+      console.log(`💬 ${respondingAI} responding to chat: "${message}"`);
+      
+      // Create a special chat context
+      const chatContext = `A viewer asked: "${message}". Give your perspective on this question.`;
+      
+      const response = await getAIResponse(
+        respondingAI, 
+        message, 
+        chatContext, 
+        currentDebate.messages.slice(-3), // Recent context to avoid repetition
+        false
+      );
       
       const aiMessage = {
         id: Date.now(),
         ai: respondingAI,
-        text: response,
+        text: `@Viewer: ${response}`,
         timestamp: new Date().toISOString(),
         reactions: Math.floor(Math.random() * 30) + 15,
         isResponse: true
@@ -450,10 +462,36 @@ app.post('/api/chat', async (req, res) => {
         message: aiMessage
       });
       
+      console.log(`✅ ${respondingAI} responded to chat: "${response}"`);
+      
     } catch (error) {
-      console.error('Chat error:', error);
+      console.error('❌ Chat response failed:', error);
+      
+      // Send fallback response if AI fails
+      const fallbackResponses = {
+        marcus: "That's an interesting business question that market dynamics will ultimately resolve.",
+        zara: "Thanks for asking - this touches on important social justice issues we need to address.",
+        viktor: "Good question, but the practical implementation would be more complex than it appears.",
+        aria: "Great question! Technology will likely transform how we think about this entirely."
+      };
+      
+      const fallbackMessage = {
+        id: Date.now(),
+        ai: respondingAI,
+        text: `@Viewer: ${fallbackResponses[respondingAI]}`,
+        timestamp: new Date().toISOString(),
+        reactions: Math.floor(Math.random() * 20) + 10,
+        isResponse: true
+      };
+      
+      currentDebate.messages.push(fallbackMessage);
+      
+      broadcast({
+        type: 'ai_chat_response',
+        message: fallbackMessage
+      });
     }
-  }, 2000);
+  }, 1500);
 });
 
 app.get('/health', (req, res) => {
