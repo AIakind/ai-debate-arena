@@ -1,5 +1,4 @@
 // server.js - Fixed AI Debate Arena with Real Conversations
-// Version 2.0
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
@@ -297,11 +296,39 @@ async function startDebate() {
   if (debateInterval) return;
   
   try {
-    console.log('🔄 Fetching fresh news for debate...');
+    console.log('🔄 Starting AI debate...');
+    console.log(`🔑 Environment check:`);
+    console.log(`   TWITTER_BEARER_TOKEN: ${process.env.TWITTER_BEARER_TOKEN ? 'Found' : 'Missing'}`);
+    console.log(`   HUGGINGFACE_API_KEY: ${process.env.HUGGINGFACE_API_KEY ? 'Found' : 'Missing'}`);
     
-    // ONLY use Twitter news - no fallbacks
-    const newsData = await fetchNewsFromTwitter();
-    const selectedTopic = newsData.topics[Math.floor(Math.random() * newsData.topics.length)];
+    let selectedTopic, newsSource;
+    
+    // Try to fetch news, but have fallback topics ready
+    try {
+      console.log('🔄 Attempting to fetch fresh news for debate...');
+      const newsData = await fetchNewsFromTwitter();
+      selectedTopic = newsData.topics[Math.floor(Math.random() * newsData.topics.length)];
+      newsSource = `Breaking from @${newsData.source}`;
+    } catch (newsError) {
+      console.log('⚠️ Twitter news fetch failed, using curated current topics...');
+      
+      // Current trending topics as fallback
+      const currentTopics = [
+        "What's your take on the latest AI breakthrough in autonomous vehicles?",
+        "How should we respond to the growing concerns about social media addiction?",
+        "What are the implications of the recent climate change summit decisions?",
+        "Should governments regulate cryptocurrency more strictly?",
+        "What's your perspective on the debate over remote work policies?",
+        "How do you view the latest developments in space exploration?",
+        "What are your thoughts on the current state of global supply chains?",
+        "Should there be more regulations on data privacy and big tech?",
+        "What's your opinion on the rise of renewable energy investments?",
+        "How should society handle the ethics of genetic engineering?"
+      ];
+      
+      selectedTopic = currentTopics[Math.floor(Math.random() * currentTopics.length)];
+      newsSource = "Current trending debates";
+    }
     
     currentDebate.topic = selectedTopic;
     currentDebate.newsSource = `Breaking from @${newsData.source}`;
@@ -585,10 +612,25 @@ app.get('*', (req, res) => {
 
 const server = app.listen(port, () => {
   console.log(`🚀 LIVE NEWS AI DEBATE ARENA`);
-  console.log(`🔑 Hugging Face: ${process.env.HUGGINGFACE_API_KEY ? 'Connected ✅' : 'Missing ❌'}`);
-  console.log(`🐦 Twitter API: ${process.env.TWITTER_BEARER_TOKEN ? 'Connected ✅' : 'Missing ❌'}`);
+  console.log(`🔑 Environment Variables Check:`);
+  console.log(`   HUGGINGFACE_API_KEY: ${process.env.HUGGINGFACE_API_KEY ? '✅ Connected' : '❌ Missing'}`);
+  console.log(`   TWITTER_BEARER_TOKEN: ${process.env.TWITTER_BEARER_TOKEN ? '✅ Connected' : '❌ Missing'}`);
+  
+  if (process.env.TWITTER_BEARER_TOKEN) {
+    console.log(`   🔑 Token length: ${process.env.TWITTER_BEARER_TOKEN.length} chars`);
+    console.log(`   🔑 Token preview: ${process.env.TWITTER_BEARER_TOKEN.substring(0, 15)}...`);
+  }
+  
   console.log(`📰 News Sources: ${NEWS_SOURCES.length} accounts`);
-  console.log(`🤖 Real AI conversations with live breaking news!`);
+  console.log(`🤖 Real AI conversations with ${process.env.TWITTER_BEARER_TOKEN ? 'live news' : 'curated topics'}!`);
+  
+  // Test environment variables immediately
+  if (!process.env.TWITTER_BEARER_TOKEN) {
+    console.log(`⚠️  Twitter integration disabled - will use fallback topics`);
+  }
+  if (!process.env.HUGGINGFACE_API_KEY) {
+    console.log(`❌ CRITICAL: Hugging Face API key missing - AI responses will fail`);
+  }
 });
 
 server.on('upgrade', (request, socket, head) => {
