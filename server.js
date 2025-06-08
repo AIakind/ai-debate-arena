@@ -1,4 +1,5 @@
 // server.js - Fixed AI Debate Arena with Real Conversations
+// Version 2.0
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
