@@ -477,20 +477,36 @@ async function startDebate() {
   } catch (error) {
     console.error('❌ Failed to start debate:', error.message);
     
-    // Show error to users
-    currentDebate.messages.push({
+    // Force start with a curated topic if everything fails
+    const forcedTopic = "What's your perspective on the impact of artificial intelligence on society?";
+    currentDebate.topic = forcedTopic;
+    currentDebate.newsSource = "Current debates";
+    currentDebate.isLive = true;
+    currentDebate.messages = [{
       id: Date.now(),
       ai: 'system',
-      text: `❌ Unable to fetch news. Please check Twitter API configuration.`,
+      text: `🔴 LIVE: AI Debate - "${forcedTopic}" (Current debates)`,
       timestamp: new Date().toISOString()
-    });
+    }];
     
     broadcast({
       type: 'debate_update',
       debate: currentDebate
     });
+    
+    console.log('🎬 Started with forced topic after error');
+    
+    // Start the conversation anyway
+    setTimeout(() => {
+      startConversationLoop();
+    }, 3000);
   }
 }
+
+function startConversationLoop() {
+  if (debateInterval) return;
+  
+  console.log('🎬 Starting conversation loop...');
 
 function stopDebate() {
   if (debateInterval) {
