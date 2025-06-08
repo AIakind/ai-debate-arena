@@ -1,4 +1,4 @@
-// server.js - Railway-Optimized AI Debate Arena
+// server.js - AI Debate Arena with Multiple News Sources
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
@@ -47,13 +47,6 @@ const AI_PERSONALITIES = {
   }
 };
 
-// News sources to follow on Twitter
-const NEWS_SOURCES = [
-  'cnn', 'bbc', 'reuters', 'ap', 'nytimes', 'washingtonpost', 
-  'guardiannews', 'wsj', 'ft', 'techcrunch', 'wired', 'verge', 
-  'axios', 'politico', 'breaking911', 'abcnews', 'cbsnews'
-];
-
 let currentDebate = {
   topic: '',
   messages: [],
@@ -91,84 +84,337 @@ function broadcast(data) {
   });
 }
 
-// Enhanced fetch news with better error handling
-async function fetchNewsFromTwitter() {
-  if (!process.env.TWITTER_BEARER_TOKEN) {
-    console.log('❌ TWITTER_BEARER_TOKEN not found in environment variables');
-    throw new Error('Twitter Bearer Token required for news fetching');
-  }
+// ==================== NEWS FETCHING FUNCTIONS ====================
 
+// 1. RSS Feed Parser (No API key needed!)
+async function fetchFromRSSFeeds() {
+  const rssFeeds = [
+    { url: 'https://rss.cnn.com/rss/edition.rss', name: 'CNN' },
+    { url: 'https://feeds.bbci.co.uk/news/rss.xml', name: 'BBC' },
+    { url: 'https://www.reuters.com/rssFeed/topNews', name: 'Reuters' },
+    { url: 'https://rss.npr.org/1001/rss.xml', name: 'NPR' },
+    { url: 'https://www.theguardian.com/world/rss', name: 'Guardian' },
+    { url: 'https://feeds.washingtonpost.com/rss/national', name: 'Washington Post' }
+  ];
+
+  const selectedFeed = rssFeeds[Math.floor(Math.random() * rssFeeds.length)];
+  
   try {
-    console.log('📡 Fetching latest breaking news from Twitter...');
-    const newsSource = NEWS_SOURCES[Math.floor(Math.random() * NEWS_SOURCES.length)];
-    console.log(`📰 Fetching from @${newsSource}...`);
-
-    const query = `from:${newsSource} -is:retweet -is:reply`;
-    const url = `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=15&tweet.fields=created_at,public_metrics&user.fields=name,username`;
-
+    console.log(`📰 Fetching RSS from: ${selectedFeed.name}`);
+    
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${process.env.TWITTER_BEARER_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(selectedFeed.url, {
+      headers: { 'User-Agent': 'AI-Debate-Arena/1.0' },
       signal: controller.signal
     });
 
     clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.log(`❌ Twitter API error: ${response.status} - ${errorText}`);
-      throw new Error(`Twitter API failed: ${response.status}`);
-    }
-
-    const data = await response.json();
+    if (!response.ok) throw new Error(`RSS fetch failed: ${response.status}`);
     
-    if (!data.data || data.data.length === 0) {
-      console.log(`📰 No recent tweets found from @${newsSource}`);
-      throw new Error('No tweets found');
-    }
-
-    // Convert tweets to debate topics
-    const tweets = data.data.slice(0, 8);
-    const topics = tweets.map(tweet => {
-      let topic = tweet.text
-        .replace(/https?:\/\/[^\s]+/g, '')
-        .replace(/@\w+/g, '')
-        .replace(/\n+/g, ' ')
-        .replace(/[📰🚨⚡️🔥💥]/g, '')
-        .trim()
-        .substring(0, 120);
-      
-      if (topic.length > 25) {
-        if (topic.includes('?')) {
-          return topic.split('?')[0] + '?';
-        } else {
-          return `What's your take on this breaking news: ${topic}?`;
+    const xmlText = await response.text();
+    
+    // Simple XML parsing for RSS items
+    const itemRegex = /<item[^>]*>.*?<\/item>/gs;
+    const titleRegex = /<title[^>]*><!\[CDATA\[(.*?)\]\]><\/title>|<title[^>]*>(.*?)<\/title>/s;
+    
+    const items = xmlText.match(itemRegex) || [];
+    const topics = [];
+    
+    for (const item of items.slice(0, 15)) {
+      const titleMatch = item.match(titleRegex);
+      if (titleMatch) {
+        let title = (titleMatch[1] || titleMatch[2] || '').trim();
+        
+        // Clean up title
+        title = title
+          .replace(/&amp;/g, '&')
+          .replace(/&quot;/g, '"')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/\s+/g, ' ')
+          .replace(/^\s*[\d\w\s]*:\s*/, '') // Remove "Breaking:" etc.
+          .trim();
+        
+        if (title.length > 25 && title.length < 150) {
+          if (title.includes('?')) {
+            topics.push(title);
+          } else {
+            topics.push(`What's your perspective on: ${title}?`);
+          }
         }
       }
-      return null;
-    }).filter(Boolean);
-
-    if (topics.length > 0) {
-      console.log(`✅ Found ${topics.length} debate topics from @${newsSource}`);
-      return {
-        topics,
-        source: newsSource,
-        timestamp: new Date().toISOString()
-      };
+      
+      if (topics.length >= 8) break;
     }
 
-    throw new Error('No valid topics generated');
+    if (topics.length === 0) throw new Error('No valid topics extracted');
+
+    return {
+      topics,
+      source: `${selectedFeed.name} RSS`,
+      timestamp: new Date().toISOString()
+    };
 
   } catch (error) {
-    console.error('❌ Error fetching Twitter news:', error.message);
+    console.error('RSS fetch failed:', error.message);
     throw error;
   }
 }
+
+// 2. Reddit API (No key needed for public posts)
+async function fetchFromReddit() {
+  const subreddits = ['news', 'worldnews', 'technology', 'science', 'politics'];
+  const selectedSubreddit = subreddits[Math.floor(Math.random() * subreddits.length)];
+  
+  try {
+    console.log(`📰 Fetching from Reddit: r/${selectedSubreddit}`);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(
+      `https://www.reddit.com/r/${selectedSubreddit}/hot.json?limit=25`,
+      {
+        headers: { 'User-Agent': 'AI-Debate-Arena/1.0' },
+        signal: controller.signal
+      }
+    );
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) throw new Error(`Reddit fetch failed: ${response.status}`);
+    
+    const data = await response.json();
+    
+    if (!data.data || !data.data.children) {
+      throw new Error('No Reddit posts found');
+    }
+
+    const topics = data.data.children
+      .filter(post => 
+        post.data.title && 
+        post.data.title.length > 20 && 
+        post.data.title.length < 150 &&
+        post.data.ups > 100 && // Only popular posts
+        !post.data.title.toLowerCase().includes('removed') &&
+        !post.data.title.toLowerCase().includes('deleted')
+      )
+      .slice(0, 10)
+      .map(post => {
+        let title = post.data.title.trim();
+        
+        if (title.includes('?')) {
+          return title;
+        } else {
+          return `What do you think about: ${title}?`;
+        }
+      });
+
+    if (topics.length === 0) throw new Error('No valid Reddit topics');
+
+    return {
+      topics,
+      source: `Reddit r/${selectedSubreddit}`,
+      timestamp: new Date().toISOString()
+    };
+
+  } catch (error) {
+    console.error('Reddit fetch failed:', error.message);
+    throw error;
+  }
+}
+
+// 3. Hacker News API (No key needed)
+async function fetchFromHackerNews() {
+  try {
+    console.log('📰 Fetching from Hacker News...');
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    // Get top story IDs
+    const topStoriesResponse = await fetch(
+      'https://hacker-news.firebaseio.com/v0/topstories.json',
+      { signal: controller.signal }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!topStoriesResponse.ok) throw new Error('HN top stories fetch failed');
+    
+    const storyIds = await topStoriesResponse.json();
+    const selectedIds = storyIds.slice(0, 15);
+    
+    const topics = [];
+    
+    // Fetch individual story details
+    for (const id of selectedIds) {
+      try {
+        const storyController = new AbortController();
+        const storyTimeoutId = setTimeout(() => storyController.abort(), 3000);
+        
+        const storyResponse = await fetch(
+          `https://hacker-news.firebaseio.com/v0/item/${id}.json`,
+          { signal: storyController.signal }
+        );
+        
+        clearTimeout(storyTimeoutId);
+        
+        if (storyResponse.ok) {
+          const story = await storyResponse.json();
+          
+          if (story.title && story.title.length > 20 && story.title.length < 150) {
+            if (story.title.includes('?')) {
+              topics.push(story.title);
+            } else {
+              topics.push(`What are your thoughts on: ${story.title}?`);
+            }
+          }
+        }
+        
+        if (topics.length >= 8) break;
+        
+      } catch (error) {
+        continue; // Skip failed individual requests
+      }
+    }
+
+    if (topics.length === 0) throw new Error('No valid HN topics');
+
+    return {
+      topics,
+      source: 'Hacker News',
+      timestamp: new Date().toISOString()
+    };
+
+  } catch (error) {
+    console.error('Hacker News fetch failed:', error.message);
+    throw error;
+  }
+}
+
+// 4. NewsAPI (if API key is available)
+async function fetchFromNewsAPI() {
+  if (!process.env.NEWS_API_KEY) {
+    throw new Error('NEWS_API_KEY not available');
+  }
+
+  try {
+    console.log('📰 Fetching from NewsAPI...');
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(
+      `https://newsapi.org/v2/top-headlines?country=us&category=general&pageSize=20&apiKey=${process.env.NEWS_API_KEY}`,
+      { signal: controller.signal }
+    );
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) throw new Error(`NewsAPI failed: ${response.status}`);
+    
+    const data = await response.json();
+    
+    if (!data.articles || data.articles.length === 0) {
+      throw new Error('No articles found');
+    }
+
+    const topics = data.articles
+      .filter(article => article.title && article.title.length > 25)
+      .slice(0, 10)
+      .map(article => {
+        let title = article.title.replace(/\s*-\s*[^-]*$/, ''); // Remove source suffix
+        
+        if (title.includes('?')) {
+          return title;
+        } else {
+          return `What are your thoughts on: ${title}?`;
+        }
+      })
+      .filter(topic => topic.length < 150);
+
+    if (topics.length === 0) throw new Error('No valid NewsAPI topics');
+
+    return {
+      topics,
+      source: 'NewsAPI',
+      timestamp: new Date().toISOString()
+    };
+
+  } catch (error) {
+    console.error('NewsAPI fetch failed:', error.message);
+    throw error;
+  }
+}
+
+// Enhanced curated topics as ultimate fallback
+function getCuratedCurrentTopics() {
+  const topics = [
+    "What's your take on the rapid advancement of AI and its impact on jobs?",
+    "How should society handle the growing concerns about social media and mental health?",
+    "What are your thoughts on the global shift towards renewable energy?",
+    "Should there be universal basic income as automation increases?",
+    "What's your perspective on the debate over privacy vs security in digital age?",
+    "How do you view the role of cryptocurrencies in the future economy?",
+    "What are the implications of remote work becoming permanent for many?",
+    "Should big tech companies be broken up or regulated more strictly?",
+    "What's your opinion on the ethics of genetic engineering and CRISPR?",
+    "How should we approach climate change mitigation vs adaptation strategies?",
+    "What are your thoughts on the space race and commercial space travel?",
+    "Should there be limits on political advertising on social media platforms?",
+    "What's your perspective on the gig economy and worker rights?",
+    "How do you view the debate over nuclear energy vs renewables?",
+    "What are the implications of quantum computing for cybersecurity?",
+    "Should artificial intelligence development be regulated internationally?",
+    "What's your take on the metaverse and virtual reality adoption?",
+    "How should we handle the growing wealth inequality globally?",
+    "What are your thoughts on electric vehicles replacing traditional cars?",
+    "Should social media platforms be held liable for content spread on them?"
+  ];
+
+  const selectedTopic = topics[Math.floor(Math.random() * topics.length)];
+  
+  return {
+    topics: [selectedTopic],
+    source: "Current Trending Debates",
+    timestamp: new Date().toISOString()
+  };
+}
+
+// Main news fetching function with multiple fallbacks
+async function fetchNewsFromMultipleSources() {
+  const fetchMethods = [
+    { name: 'RSS Feeds', fn: fetchFromRSSFeeds },
+    { name: 'Reddit', fn: fetchFromReddit },
+    { name: 'Hacker News', fn: fetchFromHackerNews },
+    { name: 'NewsAPI', fn: fetchFromNewsAPI }
+  ];
+
+  // Shuffle methods for variety
+  const shuffledMethods = fetchMethods.sort(() => Math.random() - 0.5);
+
+  for (const method of shuffledMethods) {
+    try {
+      console.log(`🔄 Trying news source: ${method.name}`);
+      const result = await method.fn();
+      console.log(`✅ Successfully fetched from ${method.name}: ${result.topics.length} topics`);
+      return result;
+    } catch (error) {
+      console.log(`❌ ${method.name} failed: ${error.message}`);
+      continue;
+    }
+  }
+
+  // Final fallback to curated topics
+  console.log('🔄 All news sources failed, using curated topics');
+  return getCuratedCurrentTopics();
+}
+
+// ==================== AI RESPONSE FUNCTIONS ====================
 
 // Enhanced AI response with retry logic
 async function getHuggingFaceChatResponse(personality, topic, recentMessages, isResponse = false) {
@@ -206,7 +452,7 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages, is
       console.log(`🔄 Trying model: ${model}`);
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
       const response = await fetch(
         "https://api-inference.huggingface.co/models/" + model + "/v1/chat/completions",
@@ -379,24 +625,13 @@ function startConversationLoop() {
         let newTopic, newSource;
         
         try {
-          const newNewsData = await fetchNewsFromTwitter();
+          const newNewsData = await fetchNewsFromMultipleSources();
           newTopic = newNewsData.topics[Math.floor(Math.random() * newNewsData.topics.length)];
-          newSource = `Breaking from @${newNewsData.source}`;
+          newSource = newNewsData.source;
         } catch (error) {
-          const currentTopics = [
-            "What's your take on the latest developments in artificial intelligence?",
-            "How should society handle the growing influence of social media?", 
-            "What are your thoughts on the current state of climate action?",
-            "Should cryptocurrencies be regulated more strictly?",
-            "What's your perspective on remote work vs office policies?",
-            "How do you view recent advances in space exploration?",
-            "What are the implications of rising automation in the workplace?",
-            "Should big tech companies face more privacy regulations?",
-            "What's your opinion on renewable energy adoption?",
-            "How should we approach the ethics of genetic engineering?"
-          ];
-          newTopic = currentTopics[Math.floor(Math.random() * currentTopics.length)];
-          newSource = "Trending debates";
+          const fallbackData = getCuratedCurrentTopics();
+          newTopic = fallbackData.topics[0];
+          newSource = fallbackData.source;
         }
         
         currentDebate.topic = newTopic;
@@ -420,7 +655,11 @@ function startConversationLoop() {
           timer: currentDebate.topicTimer,
           message: systemMessage
         });
+        
+        console.log(`🔄 Topic changed to: ${newTopic} from ${newSource}`);
+        
       } catch (error) {
+        console.error('Topic refresh failed:', error.message);
         currentDebate.topicTimer = 300;
       }
     } else {
@@ -442,35 +681,23 @@ async function startDebate() {
   try {
     console.log('🔄 Starting AI debate...');
     console.log(`🔑 Environment check:`);
-    console.log(`   TWITTER_BEARER_TOKEN: ${process.env.TWITTER_BEARER_TOKEN ? 'Found' : 'Missing'}`);
     console.log(`   HUGGINGFACE_API_KEY: ${process.env.HUGGINGFACE_API_KEY ? 'Found' : 'Missing'}`);
+    console.log(`   NEWS_API_KEY: ${process.env.NEWS_API_KEY ? 'Found' : 'Missing (optional)'}`);
     
     let selectedTopic, newsSource;
     
-    // Try to fetch news, but have fallback topics ready
+    // Try to fetch news from multiple sources
     try {
       console.log('🔄 Attempting to fetch fresh news for debate...');
-      const newsData = await fetchNewsFromTwitter();
+      const newsData = await fetchNewsFromMultipleSources();
       selectedTopic = newsData.topics[Math.floor(Math.random() * newsData.topics.length)];
-      newsSource = `Breaking from @${newsData.source}`;
+      newsSource = newsData.source;
+      console.log(`✅ Got topic from ${newsSource}: ${selectedTopic}`);
     } catch (newsError) {
-      console.log('⚠️ Twitter news fetch failed, using curated current topics...');
-      
-      const currentTopics = [
-        "What's your take on the latest AI breakthrough in autonomous vehicles?",
-        "How should we respond to the growing concerns about social media addiction?",
-        "What are the implications of the recent climate change summit decisions?",
-        "Should governments regulate cryptocurrency more strictly?",
-        "What's your perspective on the debate over remote work policies?",
-        "How do you view the latest developments in space exploration?",
-        "What's your opinion on the current state of global supply chains?",
-        "Should there be more regulations on data privacy and big tech?",
-        "What's your take on the rise of renewable energy investments?",
-        "How should society handle the ethics of genetic engineering?"
-      ];
-      
-      selectedTopic = currentTopics[Math.floor(Math.random() * currentTopics.length)];
-      newsSource = "Current trending debates";
+      console.log('⚠️ All news sources failed, using curated topics...');
+      const fallbackData = getCuratedCurrentTopics();
+      selectedTopic = fallbackData.topics[0];
+      newsSource = fallbackData.source;
     }
     
     currentDebate.topic = selectedTopic;
@@ -480,9 +707,7 @@ async function startDebate() {
     currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage: 0};
     conversationFlow = [];
     
-    const startMessage = newsSource.includes('Breaking') 
-      ? `🔴 LIVE: Breaking News Debate - "${currentDebate.topic}" (${newsSource})`
-      : `🔴 LIVE: AI Debate - "${currentDebate.topic}" (${newsSource})`;
+    const startMessage = `🔴 LIVE: AI Debate - "${currentDebate.topic}" (${newsSource})`;
 
     currentDebate.messages.push({
       id: Date.now(),
@@ -668,7 +893,14 @@ app.get('/health', (req, res) => {
     status: 'healthy', 
     websockets: clients.size,
     debate: currentDebate.isLive ? 'live' : 'stopped',
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    newsSourcesAvailable: [
+      'RSS Feeds (No API key needed)',
+      'Reddit (No API key needed)', 
+      'Hacker News (No API key needed)',
+      process.env.NEWS_API_KEY ? 'NewsAPI (Available)' : 'NewsAPI (Not configured)',
+      'Curated Topics (Fallback)'
+    ]
   });
 });
 
@@ -714,29 +946,27 @@ wss.on('connection', (ws, request) => {
 
 // Start server
 server.listen(port, '0.0.0.0', () => {
-  console.log(`🚀 LIVE AI DEBATE ARENA STARTED`);
+  console.log(`🚀 AI DEBATE ARENA WITH MULTIPLE NEWS SOURCES`);
   console.log(`🌐 Server running on port ${port}`);
   console.log(`🔑 Environment Variables Check:`);
   console.log(`   HUGGINGFACE_API_KEY: ${process.env.HUGGINGFACE_API_KEY ? '✅ Connected' : '❌ Missing'}`);
-  console.log(`   TWITTER_BEARER_TOKEN: ${process.env.TWITTER_BEARER_TOKEN ? '✅ Connected' : '❌ Missing'}`);
+  console.log(`   NEWS_API_KEY: ${process.env.NEWS_API_KEY ? '✅ Available' : '⚠️ Not configured (optional)'}`);
   
-  if (process.env.TWITTER_BEARER_TOKEN) {
-    console.log(`   🔑 Token length: ${process.env.TWITTER_BEARER_TOKEN.length} chars`);
-    console.log(`   🔑 Token preview: ${process.env.TWITTER_BEARER_TOKEN.substring(0, 15)}...`);
-  }
+  console.log(`📰 News Sources Available:`);
+  console.log(`   ✅ RSS Feeds (CNN, BBC, Reuters, NPR, Guardian, WashPost)`);
+  console.log(`   ✅ Reddit API (r/news, r/worldnews, r/technology, r/science)`);
+  console.log(`   ✅ Hacker News API`);
+  console.log(`   ${process.env.NEWS_API_KEY ? '✅' : '⚠️'} NewsAPI ${process.env.NEWS_API_KEY ? '(Available)' : '(Not configured)'}`);
+  console.log(`   ✅ Curated Current Topics (Fallback)`);
   
-  console.log(`📰 News Sources: ${NEWS_SOURCES.length} accounts`);
-  console.log(`🤖 Real AI conversations with ${process.env.TWITTER_BEARER_TOKEN ? 'live news' : 'curated topics'}!`);
+  console.log(`🤖 Real AI conversations with live news topics!`);
   console.log(`🔗 WebSocket server attached to HTTP server`);
   
-  if (!process.env.TWITTER_BEARER_TOKEN) {
-    console.log(`⚠️  Twitter integration disabled - will use fallback topics`);
-  }
   if (!process.env.HUGGINGFACE_API_KEY) {
     console.log(`❌ CRITICAL: Hugging Face API key missing - AI responses will fail`);
+  } else {
+    console.log(`🎯 Ready for connections! No Twitter API needed.`);
   }
-
-  console.log(`🎯 Ready for connections!`);
 });
 
 // Graceful shutdown
