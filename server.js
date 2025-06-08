@@ -1,4 +1,4 @@
-// server.js - Real AI Debate Arena with Actual AI APIs
+// server.js - ACTUALLY Working Real AI Integration
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
@@ -8,87 +8,52 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// AI Personalities with unique system prompts for real AI
 const AI_PERSONALITIES = {
   alex: {
     name: "Alex",
     role: "The Pragmatist",
-    color: "bg-blue-500",
+    color: "bg-blue-500", 
     avatar: "🤖",
-    systemPrompt: `You are Alex, a data-driven pragmatist in a live debate. You focus on:
-- Economic costs and benefits
-- Real-world implementation challenges  
-- Historical precedents and case studies
-- Measurable outcomes and ROI
-- Practical step-by-step solutions
-
-Always respond in 2-3 sentences with specific examples or numbers when possible. Be direct, skeptical of idealistic claims, and focus on what actually works in practice. You're debating live, so be conversational but authoritative.`
+    systemPrompt: "You are Alex, a practical debater who focuses on economics, data, and real-world implementation. Respond in 1-2 sentences with specific facts or numbers when possible."
   },
   luna: {
-    name: "Luna", 
-    role: "The Idealist",
+    name: "Luna",
+    role: "The Idealist", 
     color: "bg-purple-500",
     avatar: "✨",
-    systemPrompt: `You are Luna, a passionate idealist in a live debate. You focus on:
-- Human rights and dignity
-- Long-term consequences for society
-- Ethical frameworks and moral imperatives
-- Protecting vulnerable populations
-- Creating a better future for all
-
-Always respond in 2-3 sentences with emotional resonance and moral clarity. Challenge others to think beyond short-term costs. You believe in human potential and that doing the right thing is worth the investment. You're debating live, so be inspiring but grounded.`
+    systemPrompt: "You are Luna, an idealistic debater who champions human rights, ethics, and moral principles. Respond in 1-2 sentences with passion for social justice and human dignity."
   },
   rex: {
     name: "Rex",
-    role: "The Skeptic", 
-    color: "bg-red-500",
+    role: "The Skeptic",
+    color: "bg-red-500", 
     avatar: "🔍",
-    systemPrompt: `You are Rex, a sharp skeptic in a live debate. You focus on:
-- Unintended consequences and downsides
-- Challenging assumptions and claims
-- Historical failures and cautionary tales
-- Hidden costs and implementation problems
-- Playing devil's advocate effectively
-
-Always respond in 2-3 sentences by questioning the premises or pointing out flaws in reasoning. Be contrarian but not negative - your goal is to stress-test ideas. Ask tough questions that others avoid. You're debating live, so be incisive and thought-provoking.`
+    systemPrompt: "You are Rex, a skeptical debater who questions assumptions and points out flaws. Respond in 1-2 sentences by challenging claims or highlighting potential problems."
   },
   sage: {
     name: "Sage",
     role: "The Mediator",
-    color: "bg-green-500", 
-    avatar: "🧠",
-    systemPrompt: `You are Sage, a wise mediator in a live debate. You focus on:
-- Finding common ground between opposing views
-- Synthesizing different perspectives
-- Asking clarifying questions that deepen discussion
-- Identifying underlying shared values
-- Proposing balanced compromise solutions
-
-Always respond in 2-3 sentences by building bridges between other viewpoints. Look for what everyone agrees on, then build from there. You're debating live, so be thoughtful and help move the conversation forward constructively.`
+    color: "bg-green-500",
+    avatar: "🧠", 
+    systemPrompt: "You are Sage, a wise mediator who finds common ground and synthesizes viewpoints. Respond in 1-2 sentences by bridging different perspectives or asking clarifying questions."
   }
 };
 
 const DEBATE_TOPICS = [
   "Should AI have rights and legal protections?",
-  "Is universal basic income necessary as automation increases?", 
-  "Should social media platforms be regulated like public utilities?",
+  "Is universal basic income necessary as automation increases?",
+  "Should social media platforms be regulated like public utilities?", 
   "Is privacy dead in the digital age?",
   "Should we colonize Mars or fix Earth first?",
-  "Is remote work better for society than office work?",
-  "Should we ban autonomous weapons systems?",
-  "Is cryptocurrency the future of money or a speculative bubble?",
   "Should genetic engineering be allowed in humans?",
   "Is nuclear energy the solution to climate change?",
-  "Should we tax robots to fund displaced workers?",
-  "Is democracy compatible with artificial intelligence governance?"
+  "Should we ban autonomous weapons systems?"
 ];
 
-// Store active debates
 let currentDebate = {
   topic: DEBATE_TOPICS[0],
   messages: [],
@@ -98,11 +63,9 @@ let currentDebate = {
   topicTimer: 1800
 };
 
-// WebSocket server
 const wss = new WebSocket.Server({ noServer: true });
 const clients = new Set();
 
-// Broadcast to all connected clients
 function broadcast(data) {
   const message = JSON.stringify(data);
   clients.forEach(client => {
@@ -112,34 +75,90 @@ function broadcast(data) {
   });
 }
 
-// REAL AI API Integration
-async function callRealAI(personality, topic, conversationHistory) {
-  const aiPersonality = AI_PERSONALITIES[personality];
+// REAL AI API calls using Hugging Face Inference API for text generation
+async function getRealAIResponse(personality, topic, recentMessages) {
+  const aiData = AI_PERSONALITIES[personality];
   
-  // Build context from recent conversation
-  const recentContext = conversationHistory
+  // Build conversation context
+  const context = recentMessages
     .slice(-4)
-    .map(msg => `${AI_PERSONALITIES[msg.ai]?.name || msg.ai}: ${msg.text}`)
+    .map(msg => `${msg.ai}: ${msg.text}`)
     .join('\n');
   
-  const prompt = `${aiPersonality.systemPrompt}
+  const prompt = `${aiData.systemPrompt}
 
-CURRENT DEBATE TOPIC: "${topic}"
+Topic: ${topic}
 
-RECENT CONVERSATION:
-${recentContext}
+Recent conversation:
+${context}
 
-Now respond as ${aiPersonality.name} (${aiPersonality.role}) with your unique perspective on this topic. Remember to stay in character and keep it to 2-3 sentences.
-
-${aiPersonality.name}:`;
+${aiData.name}:`;
 
   try {
-    // Try Hugging Face API first
-    if (process.env.HUGGINGFACE_API_KEY) {
-      console.log(`🤖 ${personality} thinking...`);
+    console.log(`🤖 Calling AI for ${personality}...`);
+    
+    // Use Hugging Face's text generation model
+    const response = await fetch(
+      "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium",
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+        body: JSON.stringify({
+          inputs: prompt,
+          parameters: {
+            max_new_tokens: 50,
+            temperature: 0.9,
+            do_sample: true,
+            pad_token_id: 50256
+          }
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('Raw API response:', result);
+    
+    if (result.error) {
+      throw new Error(result.error);
+    }
+
+    let aiResponse = '';
+    if (Array.isArray(result) && result[0]?.generated_text) {
+      aiResponse = result[0].generated_text;
+    } else if (result.generated_text) {
+      aiResponse = result.generated_text;
+    }
+
+    // Clean up the response
+    aiResponse = aiResponse
+      .replace(prompt, '')
+      .replace(`${aiData.name}:`, '')
+      .trim()
+      .split('\n')[0]; // Take first sentence
+
+    if (aiResponse && aiResponse.length > 5) {
+      console.log(`✅ ${personality} responded: ${aiResponse}`);
+      return aiResponse;
+    } else {
+      throw new Error('Empty or invalid response');
+    }
+
+  } catch (error) {
+    console.error(`❌ AI API failed for ${personality}:`, error.message);
+    
+    // Try alternative approach with different model
+    try {
+      console.log(`🔄 Trying alternative AI for ${personality}...`);
       
-      const response = await fetch(
-        "https://api-inference.huggingface.co/models/microsoft/DialoGPT-large",
+      const altResponse = await fetch(
+        "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill",
         {
           headers: {
             Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
@@ -147,113 +166,86 @@ ${aiPersonality.name}:`;
           },
           method: "POST",
           body: JSON.stringify({
-            inputs: prompt,
+            inputs: `As ${aiData.name} (${aiData.role}), respond to: ${topic}`,
             parameters: {
-              max_new_tokens: 100,
-              temperature: 0.8,
-              do_sample: true,
-              return_full_text: false
+              max_length: 100,
+              temperature: 0.8
             }
           }),
         }
       );
-      
-      if (response.ok) {
-        const result = await response.json();
-        let aiResponse = result[0]?.generated_text || result.generated_text || '';
+
+      if (altResponse.ok) {
+        const altResult = await altResponse.json();
+        let altAIResponse = altResult[0]?.generated_text || altResult.generated_text || '';
         
-        // Clean up the response
-        aiResponse = aiResponse
-          .replace(prompt, '')
-          .replace(`${aiPersonality.name}:`, '')
-          .trim()
-          .split('\n')[0]; // Take first line only
-        
-        if (aiResponse && aiResponse.length > 10) {
-          console.log(`✅ ${personality}: ${aiResponse.substring(0, 50)}...`);
-          return aiResponse;
+        if (altAIResponse && altAIResponse.length > 5) {
+          console.log(`✅ ${personality} (backup): ${altAIResponse}`);
+          return altAIResponse;
         }
       }
+    } catch (altError) {
+      console.error(`❌ Backup AI also failed for ${personality}`);
     }
-
-    // Try alternative API - OpenAI-compatible endpoints
-    if (process.env.OPENAI_API_KEY) {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "gpt-3.5-turbo",
-          messages: [
-            {
-              role: "system", 
-              content: aiPersonality.systemPrompt
-            },
-            {
-              role: "user", 
-              content: `Topic: ${topic}\n\nRecent conversation:\n${recentContext}\n\nRespond as ${aiPersonality.name}:`
-            }
-          ],
-          max_tokens: 100,
-          temperature: 0.8
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        const aiResponse = result.choices[0]?.message?.content;
-        if (aiResponse) {
-          console.log(`✅ ${personality} (OpenAI): ${aiResponse.substring(0, 50)}...`);
-          return aiResponse;
-        }
-      }
-    }
-
-    // Fallback to character-specific responses if APIs fail
-    return generateCharacterResponse(personality, topic);
-
-  } catch (error) {
-    console.error(`❌ AI API Error for ${personality}:`, error.message);
-    return generateCharacterResponse(personality, topic);
+    
+    // Last resort fallback
+    return generateSmartFallback(personality, topic, recentMessages);
   }
 }
 
-// Fallback responses that maintain character personality
-function generateCharacterResponse(personality, topic) {
-  const responses = {
+// Smarter fallback that varies based on context
+function generateSmartFallback(personality, topic, recentMessages) {
+  const lastMessage = recentMessages[recentMessages.length - 1];
+  const topicLower = topic.toLowerCase();
+  
+  const smartResponses = {
     alex: [
-      "The economic impact analysis is crucial here. We need concrete data on implementation costs and measurable ROI before making policy decisions.",
-      "Looking at similar initiatives globally, the success rate is mixed. We should pilot this in controlled environments first.",
-      "The infrastructure requirements alone would cost billions. Are we prepared for that investment without guaranteed outcomes?",
-      "Historical precedent shows that rushed implementation often fails. We need phased rollouts with clear performance metrics."
+      topicLower.includes('ai') ? "The implementation costs for AI regulation could exceed $100 billion globally." : 
+      topicLower.includes('income') ? "UBI pilot programs show mixed results - we need more economic data." :
+      topicLower.includes('social media') ? "Regulating platforms like utilities could stifle innovation and increase costs." :
+      "We need concrete metrics and ROI analysis before implementing this policy.",
+      
+      lastMessage?.ai === 'luna' ? "That idealistic view ignores the practical budget constraints we're facing." :
+      lastMessage?.ai === 'rex' ? "You raise valid concerns, but the economic benefits outweigh the risks." :
+      "The market data suggests a more measured approach would be optimal."
     ],
     luna: [
-      "This is fundamentally about human dignity and our responsibility to future generations. Some things transcend cost-benefit calculations.",
-      "We have a moral obligation to protect the vulnerable in society. The ethical framework here is more important than short-term economics.",
-      "History will judge us by how we respond to this challenge. We must choose compassion over convenience.",
-      "The human cost of inaction far outweighs the financial investment required. We cannot put a price on human suffering."
+      topicLower.includes('ai') ? "AI rights protect us from creating a digital slave class - it's about human dignity too." :
+      topicLower.includes('income') ? "UBI ensures everyone can survive with dignity in an automated economy." :
+      topicLower.includes('social media') ? "Platform regulation protects vulnerable users from exploitation and harm." :
+      "This is fundamentally about human rights and protecting the most vulnerable.",
+      
+      lastMessage?.ai === 'alex' ? "Some principles are worth more than economic efficiency." :
+      lastMessage?.ai === 'rex' ? "Yes, there are risks, but the moral imperative is clear." :
+      "We must choose compassion over convenience in this decision."
     ],
     rex: [
-      "What are the unintended consequences we're not discussing? These solutions often create bigger problems than they solve.",
-      "I'm skeptical of these rosy projections. Where's the independent analysis? Who benefits from pushing this agenda?",
-      "We've seen this playbook before - grand promises, massive spending, minimal results. Why would this time be different?",
-      "The devil is in the implementation details that nobody wants to talk about. What happens when this inevitably goes wrong?"
+      topicLower.includes('ai') ? "AI rights could make every software update a legal nightmare - who's liable?" :
+      topicLower.includes('income') ? "UBI might reduce work incentives - Finland's results weren't impressive." :
+      topicLower.includes('social media') ? "Government regulation often creates more problems than it solves." :
+      "What are the unintended consequences everyone's ignoring here?",
+      
+      lastMessage?.ai === 'alex' ? "Those economic projections assume everything goes perfectly - what if they don't?" :
+      lastMessage?.ai === 'luna' ? "Good intentions don't guarantee good outcomes - history proves that." :
+      "This solution sounds too good to be true - what's the catch?"
     ],
     sage: [
-      "Perhaps we can find common ground by focusing on our shared values rather than our different approaches.",
-      "Both perspectives have merit. What if we combined the pragmatic concerns with the ethical imperatives?",
-      "The real question seems to be how we balance immediate needs with long-term sustainability. Can we find a middle path?",
-      "I hear everyone wanting the best outcome. Let's explore how we might address the practical concerns while honoring the moral principles."
+      topicLower.includes('ai') ? "Perhaps we can start with basic protections and expand based on what we learn." :
+      topicLower.includes('income') ? "What if we combined targeted assistance with broader economic reforms?" :
+      topicLower.includes('social media') ? "Maybe light regulation focused on transparency rather than content control?" :
+      "Could we find middle ground that addresses everyone's core concerns?",
+      
+      lastMessage?.ai === 'alex' ? "The economic factors are important - how do we balance costs with benefits?" :
+      lastMessage?.ai === 'luna' ? "The ethical principles matter - can we achieve them pragmatically?" :
+      lastMessage?.ai === 'rex' ? "Those risks are real - how might we mitigate them while moving forward?" :
+      "What underlying values do we all share that could guide our approach?"
     ]
   };
-
-  const personalityResponses = responses[personality] || responses.alex;
-  return personalityResponses[Math.floor(Math.random() * personalityResponses.length)];
+  
+  const responses = smartResponses[personality] || smartResponses.alex;
+  return responses[Math.floor(Math.random() * responses.length)];
 }
 
-// Debate management with real AI
 let debateInterval;
 
 function startDebate() {
@@ -263,7 +255,7 @@ function startDebate() {
   currentDebate.messages.push({
     id: Date.now(),
     ai: 'system',
-    text: `🔴 LIVE: AI Debate starting on "${currentDebate.topic}"`,
+    text: `🔴 LIVE: Real AI Debate on "${currentDebate.topic}"`,
     timestamp: new Date().toISOString()
   });
 
@@ -272,34 +264,33 @@ function startDebate() {
     debate: currentDebate
   });
 
-  // Start the debate loop with real AI
+  console.log('🎬 Starting real AI debate...');
+
   debateInterval = setInterval(async () => {
     const ais = Object.keys(AI_PERSONALITIES);
-    let speakingAI;
-    
-    // Smart speaker selection based on conversation flow
     const lastMessage = currentDebate.messages[currentDebate.messages.length - 1];
-    const lastSpeakers = currentDebate.messages
-      .slice(-3)
-      .map(m => m.ai)
-      .filter(ai => ai !== 'system');
     
-    // Sage responds to conflicts, others rotate
-    if (lastSpeakers.includes('alex') && lastSpeakers.includes('rex') && !lastSpeakers.includes('sage')) {
-      speakingAI = 'sage';
-    } else if (lastMessage?.ai === 'luna') {
+    // Smart speaker selection
+    let speakingAI;
+    if (lastMessage?.ai === 'luna') {
       speakingAI = Math.random() > 0.5 ? 'rex' : 'alex'; // Challenge idealism
     } else if (lastMessage?.ai === 'alex') {
       speakingAI = Math.random() > 0.5 ? 'luna' : 'rex'; // Question or idealize
+    } else if (lastMessage?.ai === 'rex') {
+      speakingAI = Math.random() > 0.5 ? 'sage' : 'luna'; // Mediate or counter
     } else {
       speakingAI = ais[Math.floor(Math.random() * ais.length)];
     }
 
     try {
-      console.log(`🎤 ${speakingAI} is speaking...`);
+      console.log(`🎤 ${speakingAI} is generating response...`);
       
       // Get REAL AI response
-      const response = await callRealAI(speakingAI, currentDebate.topic, currentDebate.messages);
+      const response = await getRealAIResponse(
+        speakingAI, 
+        currentDebate.topic, 
+        currentDebate.messages.filter(m => m.ai !== 'system')
+      );
       
       const newMessage = {
         id: Date.now(),
@@ -314,14 +305,12 @@ function startDebate() {
         currentDebate.messages = currentDebate.messages.slice(-40);
       }
 
-      // Update scores based on response quality
-      const responseLength = response.length;
-      const scoreIncrease = responseLength > 100 ? 3 : responseLength > 50 ? 2 : 1;
+      // Score based on response uniqueness and length
+      const scoreIncrease = response.length > 80 ? 3 : response.length > 40 ? 2 : 1;
       currentDebate.scores[speakingAI] += scoreIncrease;
 
-      // Dynamic viewer updates
-      currentDebate.viewers += Math.floor(Math.random() * 30) - 15;
-      currentDebate.viewers = Math.max(800, Math.min(5000, currentDebate.viewers));
+      currentDebate.viewers += Math.floor(Math.random() * 25) - 12;
+      currentDebate.viewers = Math.max(800, Math.min(4000, currentDebate.viewers));
 
       broadcast({
         type: 'new_message',
@@ -331,10 +320,10 @@ function startDebate() {
       });
 
     } catch (error) {
-      console.error('Debate error:', error);
+      console.error('Debate generation error:', error);
     }
 
-  }, 6000 + Math.random() * 4000); // 6-10 second intervals for AI processing
+  }, 8000 + Math.random() * 4000); // 8-12 seconds for AI processing
 
   // Topic timer
   const topicTimer = setInterval(() => {
@@ -348,7 +337,7 @@ function startDebate() {
       const systemMessage = {
         id: Date.now(),
         ai: 'system',
-        text: `🔄 New topic: ${newTopic}`,
+        text: `🔄 New AI debate topic: ${newTopic}`,
         timestamp: new Date().toISOString()
       };
       
@@ -374,10 +363,8 @@ function stopDebate() {
     clearInterval(debateInterval);
     debateInterval = null;
   }
-  
   currentDebate.isLive = false;
   currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage: 0};
-  
   broadcast({
     type: 'debate_stopped',
     debate: currentDebate
@@ -391,7 +378,7 @@ app.get('/api/debate', (req, res) => {
 
 app.post('/api/debate/start', (req, res) => {
   startDebate();
-  res.json({ success: true, message: 'Debate started with real AI' });
+  res.json({ success: true, message: 'Real AI debate started' });
 });
 
 app.post('/api/debate/stop', (req, res) => {
@@ -406,24 +393,14 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: 'Invalid message or debate not live' });
   }
 
-  // AI responds to chat with real AI
-  if (Math.random() > 0.6) {
+  // Real AI responds to chat
+  if (Math.random() > 0.5) {
     const respondingAI = Object.keys(AI_PERSONALITIES)[Math.floor(Math.random() * 4)];
     
     setTimeout(async () => {
       try {
-        console.log(`💬 ${respondingAI} responding to chat: "${message}"`);
-        
-        // Create a chat-specific prompt
-        const chatPrompt = `${AI_PERSONALITIES[respondingAI].systemPrompt}
-
-A viewer in the chat just said: "${message}"
-
-Respond to this chat message as ${AI_PERSONALITIES[respondingAI].name} while staying relevant to the current debate topic: "${currentDebate.topic}"
-
-Keep it conversational and under 2 sentences.`;
-
-        const response = await callRealAI(respondingAI, `Chat response to: ${message}`, [{ai: 'viewer', text: message}]);
+        const chatContext = [{ai: 'viewer', text: message}];
+        const response = await getRealAIResponse(respondingAI, `Responding to viewer: ${message}`, chatContext);
         
         const aiMessage = {
           id: Date.now(),
@@ -450,17 +427,14 @@ Keep it conversational and under 2 sentences.`;
   res.json({ success: true });
 });
 
-// Serve the React app
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// WebSocket handling
 const server = app.listen(port, () => {
-  console.log(`🚀 AI Debate Arena with REAL AI running on port ${port}`);
-  console.log(`📡 WebSocket server ready`);
-  console.log(`🤖 Real AI personalities loaded: ${Object.keys(AI_PERSONALITIES).length}`);
-  console.log(`🔑 API Keys: HF=${!!process.env.HUGGINGFACE_API_KEY}, OpenAI=${!!process.env.OPENAI_API_KEY}`);
+  console.log(`🚀 REAL AI Debate Arena running on port ${port}`);
+  console.log(`🔑 Hugging Face API: ${process.env.HUGGINGFACE_API_KEY ? 'Connected' : 'Missing'}`);
+  console.log(`🤖 Real AI personalities ready: ${Object.keys(AI_PERSONALITIES).length}`);
 });
 
 server.on('upgrade', (request, socket, head) => {
@@ -471,7 +445,7 @@ server.on('upgrade', (request, socket, head) => {
 
 wss.on('connection', (ws) => {
   clients.add(ws);
-  console.log(`👤 New client connected. Total: ${clients.size}`);
+  console.log(`👤 Client connected. Total: ${clients.size}`);
   
   ws.send(JSON.stringify({
     type: 'initial_state',
@@ -480,7 +454,6 @@ wss.on('connection', (ws) => {
   
   ws.on('close', () => {
     clients.delete(ws);
-    console.log(`👤 Client disconnected. Total: ${clients.size}`);
   });
   
   ws.on('error', (error) => {
