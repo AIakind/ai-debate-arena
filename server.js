@@ -1,4 +1,4 @@
-// server.js - HUGGING FACE ONLY AI Debate Arena
+// server.js - Working Hugging Face Chat Completion API
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
@@ -18,28 +18,28 @@ const AI_PERSONALITIES = {
     role: "The Pragmatist",
     color: "bg-blue-500",
     avatar: "🤖",
-    systemPrompt: "I am Alex, a pragmatic debater who focuses on economics, data, and practical solutions."
+    systemPrompt: "You are Alex, a pragmatic debater who focuses on economics, data, and practical solutions. Respond in 1-2 sentences with specific facts when possible."
   },
   luna: {
     name: "Luna",
     role: "The Idealist",
     color: "bg-purple-500",
     avatar: "✨",
-    systemPrompt: "I am Luna, an idealistic debater who champions human rights, ethics, and moral principles."
+    systemPrompt: "You are Luna, an idealistic debater who champions human rights, ethics, and moral principles. Respond in 1-2 sentences with passion for justice."
   },
   rex: {
     name: "Rex",
     role: "The Skeptic",
     color: "bg-red-500",
     avatar: "🔍",
-    systemPrompt: "I am Rex, a skeptical debater who questions assumptions and points out potential problems."
+    systemPrompt: "You are Rex, a skeptical debater who questions assumptions and points out problems. Respond in 1-2 sentences by challenging claims."
   },
   sage: {
     name: "Sage",
     role: "The Mediator",
     color: "bg-green-500",
     avatar: "🧠",
-    systemPrompt: "I am Sage, a wise mediator who finds common ground and synthesizes different viewpoints."
+    systemPrompt: "You are Sage, a wise mediator who finds common ground. Respond in 1-2 sentences by bridging different perspectives."
   }
 };
 
@@ -75,70 +75,58 @@ function broadcast(data) {
   });
 }
 
-// HUGGING FACE ONLY AI FUNCTION
-async function getHuggingFaceResponse(personality, topic, recentMessages) {
+// NEW Working Hugging Face Chat Completion API
+async function getHuggingFaceChatResponse(personality, topic, recentMessages) {
   const aiData = AI_PERSONALITIES[personality];
   
   if (!process.env.HUGGINGFACE_API_KEY) {
     throw new Error('No Hugging Face API key found');
   }
 
-  // Build simple context
-  const lastMessage = recentMessages[recentMessages.length - 1];
-  const contextText = lastMessage ? `Previous: ${lastMessage.text}` : '';
-  
-  console.log(`🤖 ${personality} thinking with Hugging Face...`);
+  // Build conversation context
+  const context = recentMessages
+    .slice(-2)
+    .map(msg => `${msg.ai}: ${msg.text}`)
+    .join('\n');
 
-  // Try different Hugging Face models that work well
+  console.log(`🤖 ${personality} using NEW Hugging Face Chat API...`);
+
+  // Use the new Hugging Face chat completion API (works like OpenAI)
   const models = [
-    "microsoft/DialoGPT-medium",
-    "facebook/blenderbot-400M-distill", 
-    "microsoft/DialoGPT-small",
-    "facebook/blenderbot_small-90M"
+    "Qwen/Qwen2.5-7B-Instruct",
+    "microsoft/Phi-3.5-mini-instruct", 
+    "meta-llama/Llama-3.2-3B-Instruct",
+    "HuggingFaceH4/zephyr-7b-beta"
   ];
 
   for (const model of models) {
     try {
       console.log(`🔄 Trying ${model} for ${personality}...`);
       
-      let prompt;
-      let requestBody;
-      
-      if (model.includes('DialoGPT')) {
-        // For DialoGPT models
-        prompt = `${aiData.systemPrompt} Topic: ${topic}. ${contextText}`;
-        requestBody = {
-          inputs: prompt,
-          parameters: {
-            max_new_tokens: 60,
-            temperature: 0.8,
-            do_sample: true,
-            pad_token_id: 50256,
-            return_full_text: false
-          }
-        };
-      } else {
-        // For BlenderBot models
-        prompt = `${aiData.systemPrompt} What do you think about: ${topic}?`;
-        requestBody = {
-          inputs: prompt,
-          parameters: {
-            max_length: 100,
-            temperature: 0.7,
-            do_sample: true
-          }
-        };
-      }
-
       const response = await fetch(
-        `https://api-inference.huggingface.co/models/${model}`,
+        "https://api-inference.huggingface.co/models/" + model + "/v1/chat/completions",
         {
           headers: {
             Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
             "Content-Type": "application/json",
           },
           method: "POST",
-          body: JSON.stringify(requestBody),
+          body: JSON.stringify({
+            model: model,
+            messages: [
+              {
+                role: "system",
+                content: aiData.systemPrompt
+              },
+              {
+                role: "user", 
+                content: `Current debate topic: "${topic}"\n\nRecent conversation:\n${context}\n\nWhat's your perspective as ${aiData.name}?`
+              }
+            ],
+            max_tokens: 80,
+            temperature: 0.8,
+            stream: false
+          }),
         }
       );
 
@@ -151,33 +139,12 @@ async function getHuggingFaceResponse(personality, topic, recentMessages) {
       }
 
       const result = await response.json();
-      console.log(`📋 ${model} raw result:`, JSON.stringify(result).substring(0, 200));
+      console.log(`📋 ${model} result:`, JSON.stringify(result).substring(0, 200));
 
-      let aiResponse = '';
-      
-      // Handle different response formats
-      if (Array.isArray(result)) {
-        if (result[0]?.generated_text) {
-          aiResponse = result[0].generated_text;
-        } else if (result[0]?.translation_text) {
-          aiResponse = result[0].translation_text;
-        }
-      } else if (result.generated_text) {
-        aiResponse = result.generated_text;
-      } else if (result[0]) {
-        aiResponse = result[0];
-      }
-
-      // Clean up the response
-      if (aiResponse) {
-        aiResponse = aiResponse
-          .replace(prompt, '') // Remove original prompt
-          .replace(/^.*?:/g, '') // Remove any "Name:" prefixes
-          .trim()
-          .split('\n')[0] // Take first line only
-          .substring(0, 200); // Limit length
-
-        if (aiResponse.length > 10 && !aiResponse.includes('undefined')) {
+      if (result.choices && result.choices[0] && result.choices[0].message) {
+        const aiResponse = result.choices[0].message.content.trim();
+        
+        if (aiResponse && aiResponse.length > 10) {
           console.log(`✅ ${personality} (${model}): ${aiResponse}`);
           return aiResponse;
         }
@@ -189,11 +156,11 @@ async function getHuggingFaceResponse(personality, topic, recentMessages) {
     }
   }
 
-  // If all models fail, try one more simple approach
+  // Try the simpler text generation endpoint if chat fails
   try {
-    console.log(`🔄 Final attempt for ${personality} with simple text generation...`);
+    console.log(`🔄 Trying simple text generation for ${personality}...`);
     
-    const simplePrompt = `Question: ${topic}\nAnswer as ${aiData.name}:`;
+    const prompt = `${aiData.systemPrompt}\n\nTopic: ${topic}\nContext: ${context}\n\n${aiData.name}: `;
     
     const response = await fetch(
       "https://api-inference.huggingface.co/models/gpt2",
@@ -204,9 +171,9 @@ async function getHuggingFaceResponse(personality, topic, recentMessages) {
         },
         method: "POST",
         body: JSON.stringify({
-          inputs: simplePrompt,
+          inputs: prompt,
           parameters: {
-            max_new_tokens: 50,
+            max_new_tokens: 60,
             temperature: 0.8,
             do_sample: true,
             return_full_text: false
@@ -226,10 +193,10 @@ async function getHuggingFaceResponse(personality, topic, recentMessages) {
       }
     }
   } catch (error) {
-    console.log(`❌ Final attempt failed: ${error.message}`);
+    console.log(`❌ GPT-2 fallback failed: ${error.message}`);
   }
 
-  throw new Error(`All Hugging Face models failed for ${personality}`);
+  throw new Error(`All Hugging Face APIs failed for ${personality}`);
 }
 
 let debateInterval;
@@ -241,7 +208,7 @@ function startDebate() {
   currentDebate.messages.push({
     id: Date.now(),
     ai: 'system',
-    text: `🔴 LIVE: Hugging Face AI Debate on "${currentDebate.topic}"`,
+    text: `🔴 LIVE: NEW Hugging Face Chat API Debate on "${currentDebate.topic}"`,
     timestamp: new Date().toISOString()
   });
 
@@ -250,20 +217,20 @@ function startDebate() {
     debate: currentDebate
   });
 
-  console.log('🎬 Starting Hugging Face AI debate...');
-  console.log(`🔑 Using API key: ${process.env.HUGGINGFACE_API_KEY ? 'Available' : 'Missing'}`);
+  console.log('🎬 Starting NEW Hugging Face Chat API debate...');
+  console.log(`🔑 API Key: ${process.env.HUGGINGFACE_API_KEY ? 'Available ✅' : 'Missing ❌'}`);
 
   debateInterval = setInterval(async () => {
     const ais = Object.keys(AI_PERSONALITIES);
     const speakingAI = ais[Math.floor(Math.random() * ais.length)];
 
     try {
-      console.log(`🎤 ${speakingAI} generating Hugging Face response...`);
+      console.log(`🎤 ${speakingAI} generating NEW API response...`);
       
-      const response = await getHuggingFaceResponse(
+      const response = await getHuggingFaceChatResponse(
         speakingAI,
         currentDebate.topic,
-        currentDebate.messages.filter(m => m.ai !== 'system').slice(-2)
+        currentDebate.messages.filter(m => m.ai !== 'system').slice(-3)
       );
       
       const newMessage = {
@@ -291,12 +258,12 @@ function startDebate() {
       });
 
     } catch (error) {
-      console.error(`❌ Hugging Face failed for ${speakingAI}:`, error.message);
+      console.error(`❌ NEW API failed for ${speakingAI}:`, error.message);
       
       const errorMessage = {
         id: Date.now(),
         ai: 'system',
-        text: `⚠️ ${speakingAI} couldn't generate response - Hugging Face API issue`,
+        text: `⚠️ ${speakingAI} API issue - trying backup models...`,
         timestamp: new Date().toISOString()
       };
       
@@ -309,7 +276,7 @@ function startDebate() {
       });
     }
 
-  }, 12000 + Math.random() * 6000); // 12-18 seconds for Hugging Face processing
+  }, 15000 + Math.random() * 10000); // 15-25 seconds for processing
 
   // Topic timer
   const topicTimer = setInterval(() => {
@@ -323,7 +290,7 @@ function startDebate() {
       const systemMessage = {
         id: Date.now(),
         ai: 'system',
-        text: `🔄 New Hugging Face AI debate: ${newTopic}`,
+        text: `🔄 New topic: ${newTopic}`,
         timestamp: new Date().toISOString()
       };
       
@@ -364,7 +331,7 @@ app.get('/api/debate', (req, res) => {
 
 app.post('/api/debate/start', (req, res) => {
   startDebate();
-  res.json({ success: true, message: 'Hugging Face AI debate started!' });
+  res.json({ success: true, message: 'NEW Hugging Face Chat API debate started!' });
 });
 
 app.post('/api/debate/stop', (req, res) => {
@@ -383,10 +350,10 @@ app.post('/api/chat', async (req, res) => {
   
   setTimeout(async () => {
     try {
-      console.log(`💬 ${respondingAI} responding to chat with Hugging Face...`);
+      console.log(`💬 ${respondingAI} responding to chat with NEW API...`);
       
       const chatContext = [{ ai: 'viewer', text: message }];
-      const response = await getHuggingFaceResponse(respondingAI, `Viewer says: ${message}`, chatContext);
+      const response = await getHuggingFaceChatResponse(respondingAI, `Viewer comment: ${message}`, chatContext);
       
       const aiMessage = {
         id: Date.now(),
@@ -405,7 +372,7 @@ app.post('/api/chat', async (req, res) => {
       });
       
     } catch (error) {
-      console.error('Hugging Face chat response failed:', error);
+      console.error('NEW API chat response failed:', error);
     }
   }, 3000);
 
@@ -417,10 +384,10 @@ app.get('*', (req, res) => {
 });
 
 const server = app.listen(port, () => {
-  console.log(`🚀 HUGGING FACE ONLY AI Debate Arena`);
-  console.log(`🔑 Hugging Face API Key: ${process.env.HUGGINGFACE_API_KEY ? 'Connected ✅' : 'Missing ❌'}`);
-  console.log(`🤖 Models: DialoGPT, BlenderBot, GPT-2`);
-  console.log(`📡 Only using Hugging Face APIs`);
+  console.log(`🚀 NEW HUGGING FACE CHAT API Debate Arena`);
+  console.log(`🔑 HF Token: ${process.env.HUGGINGFACE_API_KEY ? 'Connected ✅' : 'Missing ❌'}`);
+  console.log(`🤖 Using NEW Chat Completion API (OpenAI-compatible)`);
+  console.log(`📡 Models: Qwen, Phi-3.5, Llama-3.2, Zephyr`);
 });
 
 server.on('upgrade', (request, socket, head) => {
