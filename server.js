@@ -1,4 +1,4 @@
-// server.js - Complete AI Debate Arena Backend
+// server.js - Stable AI Debate Arena Backend
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
@@ -45,15 +45,7 @@ const AI_PERSONALITIES = {
   }
 };
 
-// News API integration for real-time topics
-const NEWS_API_KEY = process.env.NEWS_API_KEY; // Free from newsapi.org
-const NEWS_SOURCES = [
-  'bbc-news', 'cnn', 'reuters', 'associated-press', 'the-wall-street-journal',
-  'techcrunch', 'bloomberg', 'axios', 'politico'
-];
-
-// Fallback topics if news API fails
-const FALLBACK_TOPICS = [
+const DEBATE_TOPICS = [
   "Should AI have rights and legal protections?",
   "Is universal basic income necessary as automation increases?", 
   "Should social media platforms be regulated like public utilities?",
@@ -61,120 +53,14 @@ const FALLBACK_TOPICS = [
   "Should we colonize Mars or fix Earth first?",
   "Is remote work better for society than office work?",
   "Should we ban autonomous weapons systems?",
-  "Is cryptocurrency the future of money or a speculative bubble?"
+  "Is cryptocurrency the future of money or a speculative bubble?",
+  "Should social media be age-restricted like alcohol and tobacco?",
+  "Is nuclear energy the solution to climate change?",
+  "Should genetic engineering be allowed in humans?",
+  "Is democracy compatible with artificial intelligence governance?"
 ];
 
-let DEBATE_TOPICS = [...FALLBACK_TOPICS]; // Will be updated with news
-
-// Fetch today's top news and convert to debate topics
-async function fetchDailyNews() {
-  try {
-    console.log('🗞️ Fetching today\'s news for debate topics...');
-    
-    // Try NewsAPI first (free tier: 1000 requests/day)
-    if (NEWS_API_KEY) {
-      const response = await fetch(
-        `https://newsapi.org/v2/top-headlines?country=us&pageSize=10&apiKey=${NEWS_API_KEY}`
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        const newsTopics = data.articles
-          .filter(article => article.title && article.description)
-          .slice(0, 6) // Top 6 stories
-          .map(article => convertNewsToDebateTopic(article));
-        
-        if (newsTopics.length > 0) {
-          DEBATE_TOPICS = [...newsTopics, ...FALLBACK_TOPICS];
-          console.log(`✅ Updated with ${newsTopics.length} news-based topics`);
-          return newsTopics;
-        }
-      }
-    }
-    
-    // Fallback: Try RSS feeds (no API key needed)
-    const rssTopics = await fetchFromRSS();
-    if (rssTopics.length > 0) {
-      DEBATE_TOPICS = [...rssTopics, ...FALLBACK_TOPICS];
-      console.log(`✅ Updated with ${rssTopics.length} RSS-based topics`);
-      return rssTopics;
-    }
-    
-  } catch (error) {
-    console.error('❌ News fetch error:', error);
-  }
-  
-  console.log('📰 Using fallback topics');
-  return FALLBACK_TOPICS;
-}
-
-// Convert news article to debate-worthy topic
-function convertNewsToDebateTopic(article) {
-  const title = article.title;
-  const description = article.description || '';
-  
-  // Convert news headlines to debate questions
-  if (title.toLowerCase().includes('election') || title.toLowerCase().includes('vote')) {
-    return `Should the recent election developments change how we view democratic processes?`;
-  }
-  if (title.toLowerCase().includes('climate') || title.toLowerCase().includes('environment')) {
-    return `Is the latest climate news reason enough for immediate radical action?`;
-  }
-  if (title.toLowerCase().includes('ai') || title.toLowerCase().includes('artificial intelligence')) {
-    return `Do recent AI developments prove we need stronger regulation now?`;
-  }
-  if (title.toLowerCase().includes('economy') || title.toLowerCase().includes('inflation')) {
-    return `Should governments intervene more aggressively in current economic conditions?`;
-  }
-  if (title.toLowerCase().includes('war') || title.toLowerCase().includes('conflict')) {
-    return `Is international intervention justified in current global conflicts?`;
-  }
-  if (title.toLowerCase().includes('tech') || title.toLowerCase().includes('social media')) {
-    return `Do recent tech industry changes prove we need stricter platform regulation?`;
-  }
-  if (title.toLowerCase().includes('health') || title.toLowerCase().includes('pandemic')) {
-    return `Should public health policy be more restrictive based on recent developments?`;
-  }
-  if (title.toLowerCase().includes('crypto') || title.toLowerCase().includes('bitcoin')) {
-    return `Do recent cryptocurrency developments validate or condemn digital currencies?`;
-  }
-  
-  // Generic conversion for other news
-  return `Should society be concerned about: ${title.replace(/[""]/g, '').slice(0, 80)}?`;
-}
-
-// Backup: Fetch from RSS feeds (no API key needed)
-async function fetchFromRSS() {
-  try {
-    // Using a free RSS to JSON service
-    const rssUrls = [
-      'https://api.rss2json.com/v1/api.json?rss_url=https://feeds.bbci.co.uk/news/rss.xml',
-      'https://api.rss2json.com/v1/api.json?rss_url=https://rss.cnn.com/rss/edition.rss'
-    ];
-    
-    for (const url of rssUrls) {
-      try {
-        const response = await fetch(url);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.items && data.items.length > 0) {
-            return data.items
-              .slice(0, 4)
-              .map(item => convertNewsToDebateTopic({
-                title: item.title,
-                description: item.description
-              }));
-          }
-        }
-      } catch (error) {
-        console.log(`RSS source failed: ${url}`);
-      }
-    }
-  } catch (error) {
-    console.error('RSS fallback failed:', error);
-  }
-  return [];
-}
+// Store active debates
 let currentDebate = {
   topic: DEBATE_TOPICS[0],
   messages: [],
@@ -198,113 +84,40 @@ function broadcast(data) {
   });
 }
 
-// Enhanced AI prompts with news context
-async function callAI(personality, topic, conversationHistory) {
-  const isNewsTopic = !FALLBACK_TOPICS.includes(topic);
-  const newsContext = isNewsTopic ? "\n\nThis topic is based on today's breaking news. Reference current events and recent developments in your response." : "";
-  
-  const prompt = `${AI_PERSONALITIES[personality].systemPrompt}${newsContext}
-
-Current debate topic: "${topic}"
-
-Recent conversation:
-${conversationHistory.slice(-6).map(msg => `${msg.ai}: ${msg.text}`).join('\n')}
-
-Respond as ${personality} with your perspective on this topic. Keep it conversational and under 100 words.${isNewsTopic ? ' Mention that this is happening right now.' : ''}`;
-
-  try {
-    // Try multiple free AI services with fallbacks
-    
-    // Option 1: Hugging Face Inference API (Free)
-    if (process.env.HUGGINGFACE_API_KEY) {
-      const response = await fetch(
-        "https://api-inference.huggingface.co/models/microsoft/DialoGPT-large",
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          method: "POST",
-          body: JSON.stringify({
-            inputs: prompt,
-            parameters: {
-              max_length: 100,
-              temperature: 0.7,
-              do_sample: true
-            }
-          }),
-        }
-      );
-      
-      if (response.ok) {
-        const result = await response.json();
-        return result[0]?.generated_text || generateFallbackResponse(personality, topic);
-      }
-    }
-
-    // Option 2: Together AI (Free tier)
-    if (process.env.TOGETHER_API_KEY) {
-      const response = await fetch(
-        "https://api.together.xyz/inference",
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.TOGETHER_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          method: "POST",
-          body: JSON.stringify({
-            model: "togethercomputer/RedPajama-INCITE-7B-Chat",
-            prompt: prompt,
-            max_tokens: 100,
-            temperature: 0.7,
-          }),
-        }
-      );
-      
-      if (response.ok) {
-        const result = await response.json();
-        return result.output?.choices?.[0]?.text || generateFallbackResponse(personality, topic);
-      }
-    }
-
-    // Fallback to pre-written responses if APIs fail
-    return generateFallbackResponse(personality, topic);
-
-  } catch (error) {
-    console.error('AI API Error:', error);
-    return generateFallbackResponse(personality, topic);
-  }
-}
-
-// Enhanced fallback responses with news awareness
-function generateFallbackResponse(personality, topic) {
-  const isNewsTopic = !FALLBACK_TOPICS.includes(topic);
-  const newsPrefix = isNewsTopic ? "Given today's breaking news, " : "";
-  
+// Fallback responses (stable, no API calls needed)
+function generateResponse(personality, topic) {
   const responses = {
     alex: [
-      `${newsPrefix}let's examine the data and economic implications here.`,
-      `${newsPrefix}from a practical implementation standpoint, we need to consider the costs.`,
-      `${newsPrefix}the most efficient approach would be a gradual, measured rollout.`,
-      `${newsPrefix}current market research shows clear trends in this direction.`
+      "Let's examine the data and economic implications here.",
+      "From a practical implementation standpoint, we need to consider the costs.",
+      "The most efficient approach would be a gradual, measured rollout.",
+      "Market research shows clear trends in this direction.",
+      "We need evidence-based solutions, not wishful thinking.",
+      "The numbers don't lie - this approach has proven results."
     ],
     luna: [
-      `${newsPrefix}we must consider the ethical implications for future generations.`,
-      `${newsPrefix}this touches on fundamental human rights and dignity.`,
-      `${newsPrefix}our moral framework should guide how we respond to current events.`,
-      `${newsPrefix}the wellbeing of all people should be our primary concern right now.`
+      "We must consider the ethical implications for future generations.",
+      "This touches on fundamental human rights and dignity.",
+      "Our moral framework should guide technological progress.",
+      "The wellbeing of all people should be our primary concern.",
+      "We have a responsibility to protect the vulnerable in society.",
+      "History will judge us by how we handle this moral challenge."
     ],
     rex: [
-      `${newsPrefix}but have we considered the potential negative consequences?`,
-      `${newsPrefix}that assumption doesn't hold up under closer examination.`,
-      `${newsPrefix}I'm skeptical - the evidence for that claim seems weak.`,
-      `${newsPrefix}what about the unintended effects we haven't thought of?`
+      "But have we considered the potential negative consequences?",
+      "That assumption doesn't hold up under closer examination.",
+      "I'm skeptical - the evidence for that claim seems weak.",
+      "What about the unintended effects we haven't thought of?",
+      "This sounds too good to be true. What's the catch?",
+      "We're missing crucial information before making this decision."
     ],
     sage: [
-      `${newsPrefix}perhaps we can find middle ground between these perspectives.`,
-      `${newsPrefix}both sides raise valid concerns worth exploring further.`,
-      `${newsPrefix}the underlying question seems to be about balance and fairness.`,
-      `${newsPrefix}let me help bridge these different viewpoints on current events.`
+      "Perhaps we can find middle ground between these perspectives.",
+      "Both sides raise valid concerns worth exploring further.",
+      "The underlying question seems to be about balance and fairness.",
+      "Let me help bridge these different viewpoints.",
+      "What if we combined the best elements of each approach?",
+      "I think we're all seeking the same ultimate goals here."
     ]
   };
 
@@ -346,8 +159,8 @@ function startDebate() {
     }
 
     try {
-      // Get AI response
-      const response = await callAI(speakingAI, currentDebate.topic, currentDebate.messages);
+      // Get response (using fallback for stability)
+      const response = generateResponse(speakingAI, currentDebate.topic);
       
       const newMessage = {
         id: Date.now(),
@@ -359,7 +172,7 @@ function startDebate() {
 
       currentDebate.messages.push(newMessage);
       if (currentDebate.messages.length > 50) {
-        currentDebate.messages = currentDebate.messages.slice(-40); // Keep manageable
+        currentDebate.messages = currentDebate.messages.slice(-40);
       }
 
       // Update scores
@@ -383,24 +196,22 @@ function startDebate() {
       console.error('Debate error:', error);
     }
 
-  }, 4000 + Math.random() * 3000); // 4-7 second intervals
+  }, 4000 + Math.random() * 3000);
 
   // Topic timer
   const topicTimer = setInterval(() => {
     currentDebate.topicTimer--;
     
     if (currentDebate.topicTimer <= 0) {
-      // Switch topic - prioritize news topics
+      // Switch topic
       const newTopic = DEBATE_TOPICS[Math.floor(Math.random() * DEBATE_TOPICS.length)];
       currentDebate.topic = newTopic;
-      currentDebate.topicTimer = 1800; // Reset to 30 minutes
-      currentDebate.isNewsTopic = !FALLBACK_TOPICS.includes(newTopic);
-      currentDebate.newsSource = currentDebate.isNewsTopic ? "Breaking News" : "Classic Debate";
+      currentDebate.topicTimer = 1800;
       
       const systemMessage = {
         id: Date.now(),
         ai: 'system',
-        text: `🔄 ${currentDebate.isNewsTopic ? '📰 BREAKING NEWS DEBATE' : '🎯 NEW TOPIC'}: ${newTopic}`,
+        text: `🔄 New topic: ${newTopic}`,
         timestamp: new Date().toISOString()
       };
       
@@ -410,9 +221,7 @@ function startDebate() {
         type: 'topic_change',
         topic: newTopic,
         timer: currentDebate.topicTimer,
-        message: systemMessage,
-        isNewsTopic: currentDebate.isNewsTopic,
-        newsSource: currentDebate.newsSource
+        message: systemMessage
       });
     } else {
       broadcast({
@@ -466,11 +275,7 @@ app.post('/api/chat', async (req, res) => {
     
     setTimeout(async () => {
       try {
-        const response = await callAI(
-          respondingAI, 
-          currentDebate.topic, 
-          [{ai: 'viewer', text: message}]
-        );
+        const response = generateResponse(respondingAI, currentDebate.topic);
         
         const aiMessage = {
           id: Date.now(),
