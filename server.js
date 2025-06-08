@@ -75,11 +75,14 @@ function broadcast(data) {
 // ONLY fetch news from Twitter - no fallback topics
 async function fetchNewsFromTwitter() {
   if (!process.env.TWITTER_BEARER_TOKEN) {
+    console.log('❌ TWITTER_BEARER_TOKEN not found in environment variables');
     throw new Error('Twitter Bearer Token required for news fetching');
   }
 
   try {
     console.log('📡 Fetching latest breaking news from Twitter...');
+    console.log(`🔑 Token length: ${process.env.TWITTER_BEARER_TOKEN.length} characters`);
+    console.log(`🔑 Token starts with: ${process.env.TWITTER_BEARER_TOKEN.substring(0, 10)}...`);
     
     // Pick a random news source
     const newsSource = NEWS_SOURCES[Math.floor(Math.random() * NEWS_SOURCES.length)];
@@ -88,6 +91,8 @@ async function fetchNewsFromTwitter() {
     // Search for recent tweets from this news source
     const query = `from:${newsSource} -is:retweet -is:reply`;
     const url = `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=15&tweet.fields=created_at,public_metrics&user.fields=name,username`;
+    
+    console.log(`🔗 API URL: ${url}`);
 
     const response = await fetch(url, {
       headers: {
@@ -96,10 +101,22 @@ async function fetchNewsFromTwitter() {
       }
     });
 
+    console.log(`📡 Response status: ${response.status}`);
+    console.log(`📡 Response headers:`, response.headers);
+
     if (!response.ok) {
       const errorText = await response.text();
       console.log(`❌ Twitter API error: ${response.status} - ${errorText}`);
-      throw new Error(`Twitter API failed: ${response.status}`);
+      
+      if (response.status === 401) {
+        throw new Error(`Twitter API Authentication Failed - Check your Bearer Token`);
+      } else if (response.status === 403) {
+        throw new Error(`Twitter API Access Denied - Check your app permissions`);
+      } else if (response.status === 429) {
+        throw new Error(`Twitter API Rate Limited - Try again later`);
+      } else {
+        throw new Error(`Twitter API failed: ${response.status} - ${errorText}`);
+      }
     }
 
     const data = await response.json();
