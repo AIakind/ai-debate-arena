@@ -479,6 +479,14 @@ wss.on('connection', (ws) => {
     debate: currentDebate
   }));
   
+  // Auto-start debate if not already running
+  if (!currentDebate.isLive && clients.size === 1) {
+    console.log('🎬 Auto-starting debate for first client...');
+    setTimeout(() => {
+      startDebate();
+    }, 2000);
+  }
+  
   ws.on('close', () => {
     clients.delete(ws);
     console.log(`👤 Client disconnected. Total: ${clients.size}`);
