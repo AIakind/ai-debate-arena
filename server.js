@@ -1,4 +1,4 @@
-// server.js - AI Debate Arena with Article Reading
+// server.js - AI Debate Arena with Article Reading (Fixed)
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
@@ -55,7 +55,7 @@ let currentDebate = {
   viewers: 1247,
   topicTimer: 1800,
   newsSource: null,
-  currentArticle: null // Store the article being discussed
+  currentArticle: null
 };
 
 // Create WebSocket server
@@ -113,7 +113,7 @@ async function fetchFullArticleContent(url) {
     
     const html = await response.text();
     
-    // Extract article content using multiple strategies
+    // Extract article content
     let articleText = extractArticleText(html);
     
     if (articleText.length < 200) {
@@ -122,7 +122,7 @@ async function fetchFullArticleContent(url) {
     
     // Clean and limit the article text
     articleText = articleText
-      .substring(0, 2000) // Limit to first 2000 characters
+      .substring(0, 2000)
       .replace(/\s+/g, ' ')
       .trim();
     
@@ -289,7 +289,7 @@ async function fetchRSSWithArticleContent() {
               
             } catch (articleError) {
               console.log(`❌ Failed to read article content: ${articleError.message}`);
-              continue; // Try next article
+              continue;
             }
           }
         }
@@ -612,7 +612,7 @@ function startConversationLoop() {
         currentDebate.topic = newArticleData.topic;
         currentDebate.newsSource = newArticleData.source;
         currentDebate.currentArticle = newArticleData;
-        currentDebate.topicTimer = 1500; // 25 minutes per article
+        currentDebate.topicTimer = 1500;
         conversationFlow = [];
         
         const systemMessage = {
@@ -668,8 +668,9 @@ async function startDebate() {
     currentDebate.topic = articleData.topic;
     currentDebate.newsSource = articleData.source;
     currentDebate.currentArticle = articleData;
-    currentDebate.isLive = false;
-  currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage: 0};
+    currentDebate.isLive = true;
+    currentDebate.messages = [];
+    currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage: 0};
   currentDebate.currentArticle = null;
   conversationFlow = [];
   
@@ -885,9 +886,7 @@ process.on('SIGINT', () => {
     console.log('✅ Server closed');
     process.exit(0);
   });
-}); = true;
-    currentDebate.messages = [];
-    currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage: 0};
+}); 0};
     conversationFlow = [];
     
     const startMessage = `🔴 LIVE: AIs Read & Discuss - "${articleData.articleTitle}" (${articleData.source})`;
@@ -953,4 +952,5 @@ function stopDebate() {
     clearInterval(topicRefreshTimer);
     topicRefreshTimer = null;
   }
-  currentDebate.isLive
+  currentDebate.isLive = false;
+  currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage:
