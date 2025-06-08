@@ -1,12 +1,16 @@
-// server.js - Fixed Syntax - Complete Working AI Debate Arena
+// server.js - Railway-Optimized AI Debate Arena
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
 const path = require('path');
+const http = require('http');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3001;
+
+// Create HTTP server
+const server = http.createServer(app);
 
 app.use(cors());
 app.use(express.json());
@@ -60,19 +64,34 @@ let currentDebate = {
   newsSource: null
 };
 
-const wss = new WebSocket.Server({ noServer: true });
+// Create WebSocket server attached to HTTP server
+const wss = new WebSocket.Server({ 
+  server,
+  clientTracking: true,
+  perMessageDeflate: false
+});
+
 const clients = new Set();
 
 function broadcast(data) {
   const message = JSON.stringify(data);
+  console.log(`📡 Broadcasting to ${clients.size} clients:`, data.type);
+  
   clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
+      try {
+        client.send(message);
+      } catch (error) {
+        console.error('Error sending to client:', error);
+        clients.delete(client);
+      }
+    } else {
+      clients.delete(client);
     }
   });
 }
 
-// Fetch news from Twitter (optional)
+// Enhanced fetch news with better error handling
 async function fetchNewsFromTwitter() {
   if (!process.env.TWITTER_BEARER_TOKEN) {
     console.log('❌ TWITTER_BEARER_TOKEN not found in environment variables');
@@ -87,12 +106,18 @@ async function fetchNewsFromTwitter() {
     const query = `from:${newsSource} -is:retweet -is:reply`;
     const url = `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=15&tweet.fields=created_at,public_metrics&user.fields=name,username`;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
     const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${process.env.TWITTER_BEARER_TOKEN}`,
         'Content-Type': 'application/json'
-      }
+      },
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -145,7 +170,7 @@ async function fetchNewsFromTwitter() {
   }
 }
 
-// Enhanced AI response with first person speech
+// Enhanced AI response with retry logic
 async function getHuggingFaceChatResponse(personality, topic, recentMessages, isResponse = false) {
   const aiData = AI_PERSONALITIES[personality];
   
@@ -178,6 +203,11 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages, is
 
   for (const model of models) {
     try {
+      console.log(`🔄 Trying model: ${model}`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
       const response = await fetch(
         "https://api-inference.huggingface.co/models/" + model + "/v1/chat/completions",
         {
@@ -196,10 +226,16 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages, is
             temperature: 0.9,
             stream: false
           }),
+          signal: controller.signal
         }
       );
 
-      if (!response.ok) continue;
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        console.log(`❌ Model ${model} failed with status: ${response.status}`);
+        continue;
+      }
 
       const result = await response.json();
 
@@ -222,6 +258,7 @@ async function getHuggingFaceChatResponse(personality, topic, recentMessages, is
       }
 
     } catch (error) {
+      console.log(`❌ Model ${model} error:`, error.message);
       continue;
     }
   }
@@ -251,7 +288,7 @@ let debateInterval;
 let topicRefreshTimer;
 let conversationFlow = [];
 
-// Start conversation loop
+// Start conversation loop with better error handling
 function startConversationLoop() {
   if (debateInterval) return;
   
@@ -304,6 +341,7 @@ function startConversationLoop() {
       currentDebate.viewers += Math.floor(Math.random() * 30) - 15;
       currentDebate.viewers = Math.max(850, Math.min(4500, currentDebate.viewers));
 
+      console.log(`📤 Broadcasting new message from ${speakingAI}`);
       broadcast({
         type: 'new_message',
         message: newMessage,
@@ -394,9 +432,12 @@ function startConversationLoop() {
   }, 1000);
 }
 
-// Start debate function
+// Enhanced start debate function
 async function startDebate() {
-  if (debateInterval) return;
+  if (debateInterval) {
+    console.log('⚠️ Debate already running');
+    return;
+  }
   
   try {
     console.log('🔄 Starting AI debate...');
@@ -436,6 +477,7 @@ async function startDebate() {
     currentDebate.newsSource = newsSource;
     currentDebate.isLive = true;
     currentDebate.messages = [];
+    currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage: 0};
     conversationFlow = [];
     
     const startMessage = newsSource.includes('Breaking') 
@@ -449,6 +491,7 @@ async function startDebate() {
       timestamp: new Date().toISOString()
     });
 
+    console.log(`📤 Broadcasting debate start to ${clients.size} clients`);
     broadcast({
       type: 'debate_update',
       debate: currentDebate
@@ -491,6 +534,8 @@ async function startDebate() {
 }
 
 function stopDebate() {
+  console.log('🛑 Stopping debate...');
+  
   if (debateInterval) {
     clearInterval(debateInterval);
     debateInterval = null;
@@ -502,10 +547,13 @@ function stopDebate() {
   currentDebate.isLive = false;
   currentDebate.scores = {alex: 0, luna: 0, rex: 0, sage: 0};
   conversationFlow = [];
+  
   broadcast({
     type: 'debate_stopped',
     debate: currentDebate
   });
+  
+  console.log('✅ Debate stopped');
 }
 
 // API Routes
@@ -532,6 +580,10 @@ app.post('/api/chat', async (req, res) => {
 
   const respondingAI = Object.keys(AI_PERSONALITIES)[Math.floor(Math.random() * 4)];
   
+  // Send immediate response
+  res.json({ success: true, message: 'Message sent to AIs!' });
+  
+  // Process AI response asynchronously
   setTimeout(async () => {
     try {
       console.log(`💬 ${respondingAI} responding to chat: "${message}"`);
@@ -543,6 +595,9 @@ app.post('/api/chat', async (req, res) => {
       
       for (const model of models) {
         try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+
           const response = await fetch(
             "https://api-inference.huggingface.co/models/" + model + "/v1/chat/completions",
             {
@@ -560,8 +615,11 @@ app.post('/api/chat', async (req, res) => {
                 max_tokens: 80,
                 temperature: 0.8
               }),
+              signal: controller.signal
             }
           );
+
+          clearTimeout(timeoutId);
 
           if (response.ok) {
             const result = await response.json();
@@ -593,6 +651,7 @@ app.post('/api/chat', async (req, res) => {
             }
           }
         } catch (error) {
+          console.log(`❌ Chat response error with ${model}:`, error.message);
           continue;
         }
       }
@@ -601,16 +660,62 @@ app.post('/api/chat', async (req, res) => {
       console.error('Chat response failed:', error);
     }
   }, 2000);
-
-  res.json({ success: true });
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    websockets: clients.size,
+    debate: currentDebate.isLive ? 'live' : 'stopped',
+    uptime: process.uptime()
+  });
+});
+
+// Serve frontend
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-const server = app.listen(port, () => {
-  console.log(`🚀 LIVE AI DEBATE ARENA`);
+// WebSocket connection handling
+wss.on('connection', (ws, request) => {
+  clients.add(ws);
+  console.log(`👤 Client connected from ${request.socket.remoteAddress}. Total: ${clients.size}`);
+  
+  // Send initial state
+  ws.send(JSON.stringify({
+    type: 'initial_state',
+    debate: currentDebate
+  }));
+  
+  ws.on('close', () => {
+    clients.delete(ws);
+    console.log(`👤 Client disconnected. Total: ${clients.size}`);
+  });
+  
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
+    clients.delete(ws);
+  });
+
+  // Send ping every 30 seconds to keep connection alive
+  const pingInterval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.ping();
+    } else {
+      clearInterval(pingInterval);
+    }
+  }, 30000);
+
+  ws.on('close', () => {
+    clearInterval(pingInterval);
+  });
+});
+
+// Start server
+server.listen(port, '0.0.0.0', () => {
+  console.log(`🚀 LIVE AI DEBATE ARENA STARTED`);
+  console.log(`🌐 Server running on port ${port}`);
   console.log(`🔑 Environment Variables Check:`);
   console.log(`   HUGGINGFACE_API_KEY: ${process.env.HUGGINGFACE_API_KEY ? '✅ Connected' : '❌ Missing'}`);
   console.log(`   TWITTER_BEARER_TOKEN: ${process.env.TWITTER_BEARER_TOKEN ? '✅ Connected' : '❌ Missing'}`);
@@ -622,6 +727,7 @@ const server = app.listen(port, () => {
   
   console.log(`📰 News Sources: ${NEWS_SOURCES.length} accounts`);
   console.log(`🤖 Real AI conversations with ${process.env.TWITTER_BEARER_TOKEN ? 'live news' : 'curated topics'}!`);
+  console.log(`🔗 WebSocket server attached to HTTP server`);
   
   if (!process.env.TWITTER_BEARER_TOKEN) {
     console.log(`⚠️  Twitter integration disabled - will use fallback topics`);
@@ -629,29 +735,25 @@ const server = app.listen(port, () => {
   if (!process.env.HUGGINGFACE_API_KEY) {
     console.log(`❌ CRITICAL: Hugging Face API key missing - AI responses will fail`);
   }
+
+  console.log(`🎯 Ready for connections!`);
 });
 
-server.on('upgrade', (request, socket, head) => {
-  wss.handleUpgrade(request, socket, head, (ws) => {
-    wss.emit('connection', ws, request);
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('🛑 SIGTERM received, shutting down gracefully...');
+  stopDebate();
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
   });
 });
 
-wss.on('connection', (ws) => {
-  clients.add(ws);
-  console.log(`👤 Client connected. Total: ${clients.size}`);
-  
-  ws.send(JSON.stringify({
-    type: 'initial_state',
-    debate: currentDebate
-  }));
-  
-  ws.on('close', () => {
-    clients.delete(ws);
-  });
-  
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
-    clients.delete(ws);
+process.on('SIGINT', () => {
+  console.log('🛑 SIGINT received, shutting down gracefully...');
+  stopDebate();
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
   });
 });
