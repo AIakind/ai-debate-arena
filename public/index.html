@@ -6,8 +6,6 @@
     <title>AI Debate Arena - LIVE</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .ai-avatar { transition: all 0.3s ease; }
-        .speaking { transform: scale(1.1); box-shadow: 0 0 20px rgba(255,255,255,0.3); }
         .message-enter { animation: slideIn 0.5s ease-out; }
         @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         .pulse-dot { animation: pulse 2s infinite; }
@@ -26,19 +24,16 @@
                 </div>
                 <div class="flex items-center space-x-2 text-blue-400">
                     <span>👥</span>
-                    <span id="viewerCount">1,250</span>
+                    <span id="viewerCount">1,247</span>
                 </div>
             </div>
             <div class="flex items-center space-x-3">
                 <div id="connectionStatus" class="flex items-center space-x-2">
-                    <div class="w-2 h-2 bg-gray-500 rounded-full"></div>
-                    <span class="text-gray-400">Connecting...</span>
+                    <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span class="text-green-400">Connected</span>
                 </div>
-                <button id="startBtn" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-semibold">
+                <button onclick="startDebate()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-semibold">
                     🎬 Start Debate
-                </button>
-                <button id="stopBtn" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-semibold hidden">
-                    ⏹️ Stop Stream
                 </button>
             </div>
         </div>
@@ -49,19 +44,54 @@
         <div class="space-y-6">
             <!-- Debate Scores -->
             <div class="bg-gray-800 rounded-lg p-6">
-                <h3 class="text-xl font-bold mb-4 flex items-center">
-                    🏆 Debate Scores
-                </h3>
+                <h3 class="text-xl font-bold mb-4">🏆 Debate Scores</h3>
                 <div id="aiScores" class="space-y-3">
-                    <!-- AI scores will be populated here -->
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">💼</div>
+                            <div>
+                                <div class="font-semibold">Marcus</div>
+                                <div class="text-sm text-gray-400">The Capitalist</div>
+                            </div>
+                        </div>
+                        <div class="text-xl font-bold" id="score-marcus">0</div>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">🌱</div>
+                            <div>
+                                <div class="font-semibold">Zara</div>
+                                <div class="text-sm text-gray-400">The Progressive</div>
+                            </div>
+                        </div>
+                        <div class="text-xl font-bold" id="score-zara">0</div>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 bg-gray-600 rounded-full flex items-center justify-center">⚖️</div>
+                            <div>
+                                <div class="font-semibold">Viktor</div>
+                                <div class="text-sm text-gray-400">The Realist</div>
+                            </div>
+                        </div>
+                        <div class="text-xl font-bold" id="score-viktor">0</div>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center">🚀</div>
+                            <div>
+                                <div class="font-semibold">Aria</div>
+                                <div class="text-sm text-gray-400">The Futurist</div>
+                            </div>
+                        </div>
+                        <div class="text-xl font-bold" id="score-aria">0</div>
+                    </div>
                 </div>
             </div>
 
             <!-- Topic Timer -->
             <div class="bg-gray-800 rounded-lg p-6">
-                <h3 class="text-lg font-bold mb-3 flex items-center">
-                    ⏱️ Topic Timer
-                </h3>
+                <h3 class="text-lg font-bold mb-3">⏱️ Topic Timer</h3>
                 <div class="text-center">
                     <div id="topicTimer" class="text-3xl font-bold text-green-400">20:00</div>
                     <div class="text-sm text-gray-400 mt-1">until next topic</div>
@@ -70,20 +100,11 @@
 
             <!-- Chat with AIs -->
             <div class="bg-gray-800 rounded-lg p-6">
-                <h3 class="text-lg font-bold mb-3 flex items-center">
-                    💬 Chat with AIs
-                </h3>
+                <h3 class="text-lg font-bold mb-3">💬 Chat with AIs</h3>
                 <div class="flex space-x-2">
-                    <input 
-                        id="chatInput" 
-                        type="text" 
-                        placeholder="Ask the AIs something..." 
-                        class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
-                        maxlength="200"
-                    >
-                    <button id="sendBtn" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg">
-                        Send
-                    </button>
+                    <input id="chatInput" type="text" placeholder="Ask the AIs something..." 
+                           class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400">
+                    <button onclick="sendChat()" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg">Send</button>
                 </div>
             </div>
         </div>
@@ -92,28 +113,18 @@
         <div class="lg:col-span-3 space-y-6">
             <!-- Current Topic -->
             <div class="bg-gray-800 rounded-lg p-6">
-                <h3 class="text-lg font-bold mb-3 flex items-center">
-                    🎯 Current Topic:
-                </h3>
-                <div id="currentTopic" class="text-xl text-blue-300 mb-2">
-                    Loading debate topic...
-                </div>
-                <div id="topicContext" class="text-sm text-gray-400 mb-2">
-                    Context will appear here...
-                </div>
-                <div id="topicCategory" class="text-xs bg-blue-600 px-2 py-1 rounded inline-block">
-                    Category
-                </div>
+                <h3 class="text-lg font-bold mb-3">🎯 Current Topic:</h3>
+                <div id="currentTopic" class="text-xl text-blue-300 mb-2">Connecting to debate...</div>
+                <div id="topicContext" class="text-sm text-gray-400 mb-2"></div>
+                <div id="topicCategory" class="text-xs bg-blue-600 px-2 py-1 rounded inline-block">Loading...</div>
             </div>
 
             <!-- Live Debate -->
             <div class="bg-gray-800 rounded-lg p-6">
-                <h3 class="text-xl font-bold mb-4 flex items-center">
-                    💬 Live Debate
-                </h3>
+                <h3 class="text-xl font-bold mb-4">💬 Live Debate</h3>
                 <div id="debateMessages" class="space-y-4 max-h-96 overflow-y-auto">
                     <div class="text-center text-gray-400 py-8">
-                        🎬 Click "Start Debate" to begin the AI conversation...
+                        🎬 AIs are preparing to debate... They'll start automatically!
                     </div>
                 </div>
             </div>
@@ -121,297 +132,229 @@
     </div>
 
     <script>
-        class DebateArena {
-            constructor() {
-                this.ws = null;
-                this.debate = null;
-                this.isConnected = false;
-                this.reconnectAttempts = 0;
-                this.maxReconnectAttempts = 5;
-                
-                // Updated AI personalities to match server
-                this.aiPersonalities = {
-                    marcus: { name: "Marcus", role: "The Capitalist", color: "bg-blue-600", avatar: "💼" },
-                    zara: { name: "Zara", role: "The Progressive", color: "bg-green-600", avatar: "🌱" },
-                    viktor: { name: "Viktor", role: "The Realist", color: "bg-gray-600", avatar: "⚖️" },
-                    aria: { name: "Aria", role: "The Futurist", color: "bg-purple-600", avatar: "🚀" }
-                };
-                
-                this.initializeElements();
-                this.connectWebSocket();
-                this.loadInitialData();
+        let ws = null;
+        let debate = null;
+
+        // AI personalities for display
+        const aiColors = {
+            marcus: 'bg-blue-600',
+            zara: 'bg-green-600', 
+            viktor: 'bg-gray-600',
+            aria: 'bg-purple-600'
+        };
+
+        const aiAvatars = {
+            marcus: '💼',
+            zara: '🌱',
+            viktor: '⚖️', 
+            aria: '🚀'
+        };
+
+        const aiNames = {
+            marcus: 'Marcus',
+            zara: 'Zara',
+            viktor: 'Viktor',
+            aria: 'Aria'
+        };
+
+        const aiRoles = {
+            marcus: 'The Capitalist',
+            zara: 'The Progressive', 
+            viktor: 'The Realist',
+            aria: 'The Futurist'
+        };
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}`;
+            
+            console.log('Connecting to:', wsUrl);
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = function() {
+                console.log('✅ Connected to debate arena');
+                updateConnectionStatus(true);
+            };
+
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                } catch (error) {
+                    console.error('Error parsing message:', error);
+                }
+            };
+
+            ws.onclose = function() {
+                console.log('❌ Disconnected from debate arena');
+                updateConnectionStatus(false);
+                // Try to reconnect after 3 seconds
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        function handleMessage(data) {
+            console.log('Received:', data.type);
+
+            switch (data.type) {
+                case 'initial_state':
+                    debate = data.debate;
+                    updateUI();
+                    break;
+                case 'debate_update':
+                    debate = data.debate;
+                    updateUI();
+                    break;
+                case 'new_message':
+                    if (debate) {
+                        debate.messages = debate.messages || [];
+                        debate.messages.push(data.message);
+                        debate.scores = data.scores;
+                        debate.viewers = data.viewers;
+                        addMessage(data.message);
+                        updateScores();
+                        updateViewerCount();
+                    }
+                    break;
+                case 'topic_change':
+                    if (debate) {
+                        debate.topic = data.topic;
+                        debate.context = data.context;
+                        debate.category = data.category;
+                        debate.topicTimer = data.timer;
+                        updateTopic();
+                        updateTimer();
+                        if (data.message) {
+                            addMessage(data.message);
+                        }
+                    }
+                    break;
+                case 'timer_update':
+                    if (debate) {
+                        debate.topicTimer = data.timer;
+                        updateTimer();
+                    }
+                    break;
+                case 'ai_chat_response':
+                    if (debate) {
+                        debate.messages = debate.messages || [];
+                        debate.messages.push(data.message);
+                        addMessage(data.message);
+                    }
+                    break;
             }
+        }
 
-            initializeElements() {
-                this.elements = {
-                    startBtn: document.getElementById('startBtn'),
-                    stopBtn: document.getElementById('stopBtn'),
-                    connectionStatus: document.getElementById('connectionStatus'),
-                    viewerCount: document.getElementById('viewerCount'),
-                    currentTopic: document.getElementById('currentTopic'),
-                    topicContext: document.getElementById('topicContext'),
-                    topicCategory: document.getElementById('topicCategory'),
-                    topicTimer: document.getElementById('topicTimer'),
-                    aiScores: document.getElementById('aiScores'),
-                    debateMessages: document.getElementById('debateMessages'),
-                    chatInput: document.getElementById('chatInput'),
-                    sendBtn: document.getElementById('sendBtn')
-                };
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            if (connected) {
+                status.innerHTML = '<div class="w-2 h-2 bg-green-500 rounded-full"></div><span class="text-green-400">Connected</span>';
+            } else {
+                status.innerHTML = '<div class="w-2 h-2 bg-red-500 rounded-full"></div><span class="text-red-400">Disconnected</span>';
+            }
+        }
 
-                // Event listeners
-                this.elements.startBtn.addEventListener('click', () => this.startDebate());
-                this.elements.stopBtn.addEventListener('click', () => this.stopDebate());
-                this.elements.sendBtn.addEventListener('click', () => this.sendChatMessage());
-                this.elements.chatInput.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') this.sendChatMessage();
+        function updateUI() {
+            if (!debate) return;
+            updateTopic();
+            updateTimer();
+            updateScores();
+            updateViewerCount();
+            updateMessages();
+        }
+
+        function updateTopic() {
+            if (debate && debate.topic) {
+                document.getElementById('currentTopic').textContent = debate.topic;
+                document.getElementById('topicContext').textContent = debate.context || '';
+                document.getElementById('topicCategory').textContent = debate.category || 'General';
+            }
+        }
+
+        function updateTimer() {
+            if (debate && debate.topicTimer !== undefined) {
+                const minutes = Math.floor(debate.topicTimer / 60);
+                const seconds = debate.topicTimer % 60;
+                document.getElementById('topicTimer').textContent = 
+                    `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+
+        function updateScores() {
+            if (debate && debate.scores) {
+                Object.keys(debate.scores).forEach(ai => {
+                    const scoreElement = document.getElementById(`score-${ai}`);
+                    if (scoreElement) {
+                        scoreElement.textContent = debate.scores[ai] || 0;
+                    }
                 });
             }
+        }
 
-            connectWebSocket() {
-                try {
-                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const wsUrl = `${protocol}//${window.location.host}`;
-                    
-                    console.log('Connecting to WebSocket:', wsUrl);
-                    this.ws = new WebSocket(wsUrl);
-
-                    this.ws.onopen = () => {
-                        console.log('✅ WebSocket connected');
-                        this.isConnected = true;
-                        this.reconnectAttempts = 0;
-                        this.updateConnectionStatus(true);
-                    };
-
-                    this.ws.onmessage = (event) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            this.handleWebSocketMessage(data);
-                        } catch (error) {
-                            console.error('Error parsing WebSocket message:', error);
-                        }
-                    };
-
-                    this.ws.onclose = () => {
-                        console.log('❌ WebSocket disconnected');
-                        this.isConnected = false;
-                        this.updateConnectionStatus(false);
-                        this.attemptReconnect();
-                    };
-
-                    this.ws.onerror = (error) => {
-                        console.error('WebSocket error:', error);
-                        this.updateConnectionStatus(false);
-                    };
-
-                } catch (error) {
-                    console.error('Failed to create WebSocket connection:', error);
-                    this.updateConnectionStatus(false);
-                }
+        function updateViewerCount() {
+            if (debate && debate.viewers) {
+                document.getElementById('viewerCount').textContent = debate.viewers.toLocaleString();
             }
+        }
 
-            attemptReconnect() {
-                if (this.reconnectAttempts < this.maxReconnectAttempts) {
-                    this.reconnectAttempts++;
-                    console.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-                    setTimeout(() => {
-                        this.connectWebSocket();
-                    }, 3000 * this.reconnectAttempts);
-                } else {
-                    console.log('Max reconnection attempts reached');
-                    this.updateConnectionStatus(false, 'Connection failed');
-                }
+        function updateMessages() {
+            if (!debate || !debate.messages) return;
+            
+            const container = document.getElementById('debateMessages');
+            container.innerHTML = '';
+            
+            debate.messages.forEach(message => {
+                addMessageToContainer(message, container);
+            });
+            
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function addMessage(message) {
+            const container = document.getElementById('debateMessages');
+            addMessageToContainer(message, container);
+            
+            // Keep only last 50 messages
+            while (container.children.length > 50) {
+                container.removeChild(container.firstChild);
             }
+            
+            container.scrollTop = container.scrollHeight;
+        }
 
-            updateConnectionStatus(connected, message = '') {
-                const statusDiv = this.elements.connectionStatus;
-                const dot = statusDiv.querySelector('.w-2');
-                const text = statusDiv.querySelector('span');
-
-                if (connected) {
-                    dot.className = 'w-2 h-2 bg-green-500 rounded-full';
-                    text.textContent = 'Connected';
-                    text.className = 'text-green-400';
-                } else {
-                    dot.className = 'w-2 h-2 bg-red-500 rounded-full';
-                    text.textContent = message || 'Disconnected';
-                    text.className = 'text-red-400';
-                }
-            }
-
-            async loadInitialData() {
-                try {
-                    const response = await fetch('/api/debate');
-                    if (response.ok) {
-                        this.debate = await response.json();
-                        this.updateUI();
-                    }
-                } catch (error) {
-                    console.error('Failed to load initial data:', error);
-                }
-            }
-
-            handleWebSocketMessage(data) {
-                console.log('WebSocket message received:', data.type);
-
-                switch (data.type) {
-                    case 'initial_state':
-                        this.debate = data.debate;
-                        this.updateUI();
-                        break;
-                    case 'debate_update':
-                        this.debate = data.debate;
-                        this.updateUI();
-                        break;
-                    case 'new_message':
-                        if (this.debate) {
-                            this.debate.messages.push(data.message);
-                            this.debate.scores = data.scores;
-                            this.debate.viewers = data.viewers;
-                            this.addMessage(data.message);
-                            this.updateScores();
-                            this.updateViewerCount();
-                        }
-                        break;
-                    case 'topic_change':
-                        if (this.debate) {
-                            this.debate.topic = data.topic;
-                            this.debate.context = data.context;
-                            this.debate.category = data.category;
-                            this.debate.topicTimer = data.timer;
-                            this.updateCurrentTopic();
-                            this.updateTopicTimer();
-                            if (data.message) {
-                                this.addMessage(data.message);
-                            }
-                        }
-                        break;
-                    case 'timer_update':
-                        if (this.debate) {
-                            this.debate.topicTimer = data.timer;
-                            this.updateTopicTimer();
-                        }
-                        break;
-                    case 'ai_chat_response':
-                        if (this.debate) {
-                            this.debate.messages.push(data.message);
-                            this.addMessage(data.message);
-                        }
-                        break;
-                    case 'debate_stopped':
-                        this.debate = data.debate;
-                        this.updateUI();
-                        break;
-                }
-            }
-
-            updateUI() {
-                if (!this.debate) return;
-
-                this.updateCurrentTopic();
-                this.updateTopicTimer();
-                this.updateScores();
-                this.updateViewerCount();
-                this.updateMessages();
-                this.updateButtons();
-            }
-
-            updateCurrentTopic() {
-                if (this.debate?.topic) {
-                    this.elements.currentTopic.textContent = this.debate.topic;
-                    this.elements.topicContext.textContent = this.debate.context || '';
-                    this.elements.topicCategory.textContent = this.debate.category || 'General';
-                }
-            }
-
-            updateTopicTimer() {
-                if (this.debate?.topicTimer !== undefined) {
-                    const minutes = Math.floor(this.debate.topicTimer / 60);
-                    const seconds = this.debate.topicTimer % 60;
-                    this.elements.topicTimer.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-                }
-            }
-
-            updateScores() {
-                if (!this.debate?.scores) return;
-
-                const scoresHtml = Object.entries(this.aiPersonalities).map(([key, ai]) => {
-                    const score = this.debate.scores[key] || 0;
-                    return `
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center space-x-3">
-                                <div class="w-10 h-10 ${ai.color} rounded-full flex items-center justify-center text-lg">
-                                    ${ai.avatar}
-                                </div>
-                                <div>
-                                    <div class="font-semibold">${ai.name}</div>
-                                    <div class="text-sm text-gray-400">${ai.role}</div>
-                                </div>
-                            </div>
-                            <div class="text-xl font-bold">${score}</div>
+        function addMessageToContainer(message, container) {
+            const messageDiv = document.createElement('div');
+            
+            if (message.ai === 'system') {
+                messageDiv.innerHTML = `
+                    <div class="text-center py-3">
+                        <div class="inline-block bg-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm">
+                            ${message.text}
                         </div>
-                    `;
-                }).join('');
-
-                this.elements.aiScores.innerHTML = scoresHtml;
-            }
-
-            updateViewerCount() {
-                if (this.debate?.viewers) {
-                    this.elements.viewerCount.textContent = this.debate.viewers.toLocaleString();
-                }
-            }
-
-            updateMessages() {
-                if (!this.debate?.messages) return;
-
-                const messagesHtml = this.debate.messages.map(message => this.createMessageHtml(message)).join('');
-                this.elements.debateMessages.innerHTML = messagesHtml;
-                this.elements.debateMessages.scrollTop = this.elements.debateMessages.scrollHeight;
-            }
-
-            addMessage(message) {
-                const messageElement = document.createElement('div');
-                messageElement.innerHTML = this.createMessageHtml(message);
-                messageElement.firstChild.classList.add('message-enter');
-                
-                this.elements.debateMessages.appendChild(messageElement.firstChild);
-                this.elements.debateMessages.scrollTop = this.elements.debateMessages.scrollHeight;
-
-                // Keep only last 50 messages
-                const messages = this.elements.debateMessages.children;
-                while (messages.length > 50) {
-                    messages[0].remove();
-                }
-            }
-
-            createMessageHtml(message) {
-                if (message.ai === 'system') {
-                    return `
-                        <div class="text-center py-3">
-                            <div class="inline-block bg-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm">
-                                ${message.text}
-                            </div>
-                        </div>
-                    `;
-                }
-
-                const ai = this.aiPersonalities[message.ai];
-                if (!ai) return '';
-
-                const isResponse = message.isResponse || false;
+                    </div>
+                `;
+            } else {
+                const aiName = aiNames[message.ai] || message.ai;
+                const aiRole = aiRoles[message.ai] || '';
+                const aiColor = aiColors[message.ai] || 'bg-gray-500';
+                const aiAvatar = aiAvatars[message.ai] || '🤖';
                 const timestamp = new Date(message.timestamp).toLocaleTimeString();
-
-                return `
+                
+                messageDiv.innerHTML = `
                     <div class="flex space-x-3 p-3 rounded-lg hover:bg-gray-700/50 transition-colors">
-                        <div class="w-10 h-10 ${ai.color} rounded-full flex items-center justify-center text-lg flex-shrink-0">
-                            ${ai.avatar}
+                        <div class="w-10 h-10 ${aiColor} rounded-full flex items-center justify-center text-lg flex-shrink-0">
+                            ${aiAvatar}
                         </div>
                         <div class="flex-1">
                             <div class="flex items-center space-x-2 mb-1">
-                                <span class="font-semibold">${ai.name}</span>
-                                <span class="text-sm text-gray-400">${ai.role}</span>
+                                <span class="font-semibold">${aiName}</span>
+                                <span class="text-sm text-gray-400">${aiRole}</span>
                                 <span class="text-xs text-gray-500">${timestamp}</span>
-                                ${isResponse ? '<span class="text-xs bg-purple-600 px-2 py-1 rounded">💬 Chat Response</span>' : ''}
+                                ${message.isResponse ? '<span class="text-xs bg-purple-600 px-2 py-1 rounded">💬 Chat Response</span>' : ''}
                             </div>
                             <div class="text-gray-100">${message.text}</div>
                             ${message.reactions ? `
@@ -424,63 +367,48 @@
                     </div>
                 `;
             }
-
-            updateButtons() {
-                if (this.debate?.isLive) {
-                    this.elements.startBtn.classList.add('hidden');
-                    this.elements.stopBtn.classList.remove('hidden');
-                } else {
-                    this.elements.startBtn.classList.remove('hidden');
-                    this.elements.stopBtn.classList.add('hidden');
-                }
-            }
-
-            async startDebate() {
-                try {
-                    const response = await fetch('/api/debate/start', { method: 'POST' });
-                    if (response.ok) {
-                        console.log('✅ Debate started successfully');
-                    }
-                } catch (error) {
-                    console.error('Failed to start debate:', error);
-                }
-            }
-
-            async stopDebate() {
-                try {
-                    const response = await fetch('/api/debate/stop', { method: 'POST' });
-                    if (response.ok) {
-                        console.log('✅ Debate stopped successfully');
-                    }
-                } catch (error) {
-                    console.error('Failed to stop debate:', error);
-                }
-            }
-
-            async sendChatMessage() {
-                const message = this.elements.chatInput.value.trim();
-                if (!message || !this.debate?.isLive) return;
-
-                try {
-                    const response = await fetch('/api/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message })
-                    });
-
-                    if (response.ok) {
-                        this.elements.chatInput.value = '';
-                        console.log('✅ Chat message sent');
-                    }
-                } catch (error) {
-                    console.error('Failed to send chat message:', error);
-                }
-            }
+            
+            messageDiv.classList.add('message-enter');
+            container.appendChild(messageDiv);
         }
 
-        // Initialize the debate arena when page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            window.debateArena = new DebateArena();
+        function startDebate() {
+            fetch('/api/debate/start', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => console.log('✅ Debate started:', data))
+                .catch(error => console.error('❌ Failed to start debate:', error));
+        }
+
+        function sendChat() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('✅ Chat sent:', data);
+                input.value = '';
+            })
+            .catch(error => console.error('❌ Failed to send chat:', error));
+        }
+
+        // Handle Enter key in chat input
+        document.getElementById('chatInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendChat();
+            }
+        });
+
+        // Connect when page loads
+        window.addEventListener('load', function() {
+            console.log('🚀 AI Debate Arena loading...');
+            connectWebSocket();
         });
     </script>
 </body>
