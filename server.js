@@ -1,4 +1,4 @@
-// server.js - ACTUALLY Working Real AI Integration
+// server.js - PURE AI ONLY - No fallback responses
 const express = require('express');
 const WebSocket = require('ws');
 const cors = require('cors');
@@ -16,37 +16,37 @@ const AI_PERSONALITIES = {
   alex: {
     name: "Alex",
     role: "The Pragmatist",
-    color: "bg-blue-500", 
+    color: "bg-blue-500",
     avatar: "🤖",
-    systemPrompt: "You are Alex, a practical debater who focuses on economics, data, and real-world implementation. Respond in 1-2 sentences with specific facts or numbers when possible."
+    systemPrompt: "You are Alex, a pragmatic debater. Focus on economics, data, practical solutions. Be direct and cite facts. Respond in 1-2 sentences only."
   },
   luna: {
     name: "Luna",
-    role: "The Idealist", 
+    role: "The Idealist",
     color: "bg-purple-500",
     avatar: "✨",
-    systemPrompt: "You are Luna, an idealistic debater who champions human rights, ethics, and moral principles. Respond in 1-2 sentences with passion for social justice and human dignity."
+    systemPrompt: "You are Luna, an idealistic debater. Focus on ethics, human rights, moral principles. Be passionate about justice. Respond in 1-2 sentences only."
   },
   rex: {
     name: "Rex",
     role: "The Skeptic",
-    color: "bg-red-500", 
+    color: "bg-red-500",
     avatar: "🔍",
-    systemPrompt: "You are Rex, a skeptical debater who questions assumptions and points out flaws. Respond in 1-2 sentences by challenging claims or highlighting potential problems."
+    systemPrompt: "You are Rex, a skeptical debater. Question assumptions, point out flaws, challenge claims. Be critical but constructive. Respond in 1-2 sentences only."
   },
   sage: {
     name: "Sage",
     role: "The Mediator",
     color: "bg-green-500",
-    avatar: "🧠", 
-    systemPrompt: "You are Sage, a wise mediator who finds common ground and synthesizes viewpoints. Respond in 1-2 sentences by bridging different perspectives or asking clarifying questions."
+    avatar: "🧠",
+    systemPrompt: "You are Sage, a wise mediator. Find common ground, synthesize viewpoints, ask clarifying questions. Be balanced. Respond in 1-2 sentences only."
   }
 };
 
 const DEBATE_TOPICS = [
   "Should AI have rights and legal protections?",
   "Is universal basic income necessary as automation increases?",
-  "Should social media platforms be regulated like public utilities?", 
+  "Should social media platforms be regulated like public utilities?",
   "Is privacy dead in the digital age?",
   "Should we colonize Mars or fix Earth first?",
   "Should genetic engineering be allowed in humans?",
@@ -75,90 +75,104 @@ function broadcast(data) {
   });
 }
 
-// REAL AI API calls using Hugging Face Inference API for text generation
-async function getRealAIResponse(personality, topic, recentMessages) {
+// PURE AI FUNCTION - NO FALLBACKS!
+async function getPureAIResponse(personality, topic, recentMessages) {
   const aiData = AI_PERSONALITIES[personality];
   
   // Build conversation context
   const context = recentMessages
-    .slice(-4)
+    .slice(-3)
     .map(msg => `${msg.ai}: ${msg.text}`)
     .join('\n');
   
   const prompt = `${aiData.systemPrompt}
 
-Topic: ${topic}
+Current debate topic: "${topic}"
 
 Recent conversation:
 ${context}
 
+Now respond as ${aiData.name} with your unique perspective. Keep it to 1-2 sentences maximum.
+
 ${aiData.name}:`;
 
-  try {
-    console.log(`🤖 Calling AI for ${personality}...`);
-    
-    // Use Hugging Face's text generation model
-    const response = await fetch(
-      "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium",
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        method: "POST",
-        body: JSON.stringify({
-          inputs: prompt,
-          parameters: {
-            max_new_tokens: 50,
-            temperature: 0.9,
-            do_sample: true,
-            pad_token_id: 50256
-          }
-        }),
-      }
-    );
+  console.log(`🤖 ${personality} is thinking about: ${topic}`);
 
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`);
-    }
-
-    const result = await response.json();
-    console.log('Raw API response:', result);
-    
-    if (result.error) {
-      throw new Error(result.error);
-    }
-
-    let aiResponse = '';
-    if (Array.isArray(result) && result[0]?.generated_text) {
-      aiResponse = result[0].generated_text;
-    } else if (result.generated_text) {
-      aiResponse = result.generated_text;
-    }
-
-    // Clean up the response
-    aiResponse = aiResponse
-      .replace(prompt, '')
-      .replace(`${aiData.name}:`, '')
-      .trim()
-      .split('\n')[0]; // Take first sentence
-
-    if (aiResponse && aiResponse.length > 5) {
-      console.log(`✅ ${personality} responded: ${aiResponse}`);
-      return aiResponse;
-    } else {
-      throw new Error('Empty or invalid response');
-    }
-
-  } catch (error) {
-    console.error(`❌ AI API failed for ${personality}:`, error.message);
-    
-    // Try alternative approach with different model
+  // Try multiple AI services until one works
+  
+  // Method 1: OpenAI API (best results)
+  if (process.env.OPENAI_API_KEY) {
     try {
-      console.log(`🔄 Trying alternative AI for ${personality}...`);
-      
-      const altResponse = await fetch(
-        "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill",
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo",
+          messages: [
+            { role: "system", content: aiData.systemPrompt },
+            { role: "user", content: `Debate topic: ${topic}\n\nRecent conversation:\n${context}\n\nRespond as ${aiData.name} in 1-2 sentences:` }
+          ],
+          max_tokens: 100,
+          temperature: 0.9
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const aiResponse = result.choices[0]?.message?.content?.trim();
+        if (aiResponse && aiResponse.length > 5) {
+          console.log(`✅ ${personality} (OpenAI): ${aiResponse}`);
+          return aiResponse;
+        }
+      }
+    } catch (error) {
+      console.log(`❌ OpenAI failed for ${personality}: ${error.message}`);
+    }
+  }
+
+  // Method 2: Anthropic Claude API
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": process.env.ANTHROPIC_API_KEY,
+          "Content-Type": "application/json",
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model: "claude-3-haiku-20240307",
+          max_tokens: 100,
+          messages: [
+            {
+              role: "user",
+              content: `${aiData.systemPrompt}\n\nTopic: ${topic}\nContext: ${context}\n\nRespond as ${aiData.name} in 1-2 sentences:`
+            }
+          ]
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const aiResponse = result.content[0]?.text?.trim();
+        if (aiResponse && aiResponse.length > 5) {
+          console.log(`✅ ${personality} (Claude): ${aiResponse}`);
+          return aiResponse;
+        }
+      }
+    } catch (error) {
+      console.log(`❌ Claude failed for ${personality}: ${error.message}`);
+    }
+  }
+
+  // Method 3: Hugging Face Conversational AI
+  if (process.env.HUGGINGFACE_API_KEY) {
+    try {
+      const response = await fetch(
+        "https://api-inference.huggingface.co/models/microsoft/DialoGPT-large",
         {
           headers: {
             Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
@@ -166,84 +180,106 @@ ${aiData.name}:`;
           },
           method: "POST",
           body: JSON.stringify({
-            inputs: `As ${aiData.name} (${aiData.role}), respond to: ${topic}`,
+            inputs: {
+              past_user_inputs: [`What do you think about: ${topic}?`],
+              generated_responses: [],
+              text: `As ${aiData.name}, ${aiData.systemPrompt.toLowerCase()} What's your take on ${topic}?`
+            },
             parameters: {
               max_length: 100,
-              temperature: 0.8
+              temperature: 0.9,
+              do_sample: true
             }
           }),
         }
       );
 
-      if (altResponse.ok) {
-        const altResult = await altResponse.json();
-        let altAIResponse = altResult[0]?.generated_text || altResult.generated_text || '';
+      if (response.ok) {
+        const result = await response.json();
+        let aiResponse = result.generated_text || result[0]?.generated_text || '';
         
-        if (altAIResponse && altAIResponse.length > 5) {
-          console.log(`✅ ${personality} (backup): ${altAIResponse}`);
-          return altAIResponse;
+        if (aiResponse && aiResponse.length > 10) {
+          // Clean up response
+          aiResponse = aiResponse
+            .replace(/^.*?:/g, '') // Remove prefixes
+            .trim()
+            .split('.')[0] + '.'; // Take first sentence
+          
+          console.log(`✅ ${personality} (HuggingFace): ${aiResponse}`);
+          return aiResponse;
         }
       }
-    } catch (altError) {
-      console.error(`❌ Backup AI also failed for ${personality}`);
+    } catch (error) {
+      console.log(`❌ HuggingFace failed for ${personality}: ${error.message}`);
     }
-    
-    // Last resort fallback
-    return generateSmartFallback(personality, topic, recentMessages);
   }
-}
 
-// Smarter fallback that varies based on context
-function generateSmartFallback(personality, topic, recentMessages) {
-  const lastMessage = recentMessages[recentMessages.length - 1];
-  const topicLower = topic.toLowerCase();
-  
-  const smartResponses = {
-    alex: [
-      topicLower.includes('ai') ? "The implementation costs for AI regulation could exceed $100 billion globally." : 
-      topicLower.includes('income') ? "UBI pilot programs show mixed results - we need more economic data." :
-      topicLower.includes('social media') ? "Regulating platforms like utilities could stifle innovation and increase costs." :
-      "We need concrete metrics and ROI analysis before implementing this policy.",
+  // Method 4: Free APIs from HuggingFace
+  try {
+    const response = await fetch(
+      "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill",
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY || 'hf_demo'}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+        body: JSON.stringify({
+          inputs: `${aiData.systemPrompt} Topic: ${topic}. What do you think?`,
+          parameters: {
+            max_length: 80,
+            temperature: 0.8
+          }
+        }),
+      }
+    );
+
+    if (response.ok) {
+      const result = await response.json();
+      let aiResponse = result[0]?.generated_text || result.generated_text || '';
       
-      lastMessage?.ai === 'luna' ? "That idealistic view ignores the practical budget constraints we're facing." :
-      lastMessage?.ai === 'rex' ? "You raise valid concerns, but the economic benefits outweigh the risks." :
-      "The market data suggests a more measured approach would be optimal."
-    ],
-    luna: [
-      topicLower.includes('ai') ? "AI rights protect us from creating a digital slave class - it's about human dignity too." :
-      topicLower.includes('income') ? "UBI ensures everyone can survive with dignity in an automated economy." :
-      topicLower.includes('social media') ? "Platform regulation protects vulnerable users from exploitation and harm." :
-      "This is fundamentally about human rights and protecting the most vulnerable.",
-      
-      lastMessage?.ai === 'alex' ? "Some principles are worth more than economic efficiency." :
-      lastMessage?.ai === 'rex' ? "Yes, there are risks, but the moral imperative is clear." :
-      "We must choose compassion over convenience in this decision."
-    ],
-    rex: [
-      topicLower.includes('ai') ? "AI rights could make every software update a legal nightmare - who's liable?" :
-      topicLower.includes('income') ? "UBI might reduce work incentives - Finland's results weren't impressive." :
-      topicLower.includes('social media') ? "Government regulation often creates more problems than it solves." :
-      "What are the unintended consequences everyone's ignoring here?",
-      
-      lastMessage?.ai === 'alex' ? "Those economic projections assume everything goes perfectly - what if they don't?" :
-      lastMessage?.ai === 'luna' ? "Good intentions don't guarantee good outcomes - history proves that." :
-      "This solution sounds too good to be true - what's the catch?"
-    ],
-    sage: [
-      topicLower.includes('ai') ? "Perhaps we can start with basic protections and expand based on what we learn." :
-      topicLower.includes('income') ? "What if we combined targeted assistance with broader economic reforms?" :
-      topicLower.includes('social media') ? "Maybe light regulation focused on transparency rather than content control?" :
-      "Could we find middle ground that addresses everyone's core concerns?",
-      
-      lastMessage?.ai === 'alex' ? "The economic factors are important - how do we balance costs with benefits?" :
-      lastMessage?.ai === 'luna' ? "The ethical principles matter - can we achieve them pragmatically?" :
-      lastMessage?.ai === 'rex' ? "Those risks are real - how might we mitigate them while moving forward?" :
-      "What underlying values do we all share that could guide our approach?"
-    ]
-  };
-  
-  const responses = smartResponses[personality] || smartResponses.alex;
-  return responses[Math.floor(Math.random() * responses.length)];
+      if (aiResponse && aiResponse.length > 10) {
+        console.log(`✅ ${personality} (BlenderBot): ${aiResponse}`);
+        return aiResponse;
+      }
+    }
+  } catch (error) {
+    console.log(`❌ BlenderBot failed for ${personality}: ${error.message}`);
+  }
+
+  // Method 5: Together AI (Free tier)
+  if (process.env.TOGETHER_API_KEY) {
+    try {
+      const response = await fetch("https://api.together.xyz/inference", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.TOGETHER_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "togethercomputer/RedPajama-INCITE-Chat-3B-v1",
+          prompt: `${aiData.systemPrompt}\n\nTopic: ${topic}\nContext: ${context}\n\n${aiData.name}:`,
+          max_tokens: 80,
+          temperature: 0.9
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const aiResponse = result.output?.choices?.[0]?.text?.trim();
+        if (aiResponse && aiResponse.length > 5) {
+          console.log(`✅ ${personality} (Together): ${aiResponse}`);
+          return aiResponse;
+        }
+      }
+    } catch (error) {
+      console.log(`❌ Together AI failed for ${personality}: ${error.message}`);
+    }
+  }
+
+  // If ALL APIs fail, throw error - NO FALLBACKS!
+  console.error(`❌ ALL AI APIs FAILED for ${personality}! No response generated.`);
+  throw new Error(`No AI service available for ${personality}`);
 }
 
 let debateInterval;
@@ -255,7 +291,7 @@ function startDebate() {
   currentDebate.messages.push({
     id: Date.now(),
     ai: 'system',
-    text: `🔴 LIVE: Real AI Debate on "${currentDebate.topic}"`,
+    text: `🔴 LIVE: Pure AI Debate on "${currentDebate.topic}" - Only real AI responses!`,
     timestamp: new Date().toISOString()
   });
 
@@ -264,31 +300,19 @@ function startDebate() {
     debate: currentDebate
   });
 
-  console.log('🎬 Starting real AI debate...');
+  console.log('🎬 Starting PURE AI debate - no fallbacks!');
 
   debateInterval = setInterval(async () => {
     const ais = Object.keys(AI_PERSONALITIES);
-    const lastMessage = currentDebate.messages[currentDebate.messages.length - 1];
-    
-    // Smart speaker selection
-    let speakingAI;
-    if (lastMessage?.ai === 'luna') {
-      speakingAI = Math.random() > 0.5 ? 'rex' : 'alex'; // Challenge idealism
-    } else if (lastMessage?.ai === 'alex') {
-      speakingAI = Math.random() > 0.5 ? 'luna' : 'rex'; // Question or idealize
-    } else if (lastMessage?.ai === 'rex') {
-      speakingAI = Math.random() > 0.5 ? 'sage' : 'luna'; // Mediate or counter
-    } else {
-      speakingAI = ais[Math.floor(Math.random() * ais.length)];
-    }
+    const speakingAI = ais[Math.floor(Math.random() * ais.length)];
 
     try {
-      console.log(`🎤 ${speakingAI} is generating response...`);
+      console.log(`🎤 ${speakingAI} is generating REAL AI response...`);
       
-      // Get REAL AI response
-      const response = await getRealAIResponse(
-        speakingAI, 
-        currentDebate.topic, 
+      // Get PURE AI response - will throw error if all APIs fail
+      const response = await getPureAIResponse(
+        speakingAI,
+        currentDebate.topic,
         currentDebate.messages.filter(m => m.ai !== 'system')
       );
       
@@ -305,10 +329,7 @@ function startDebate() {
         currentDebate.messages = currentDebate.messages.slice(-40);
       }
 
-      // Score based on response uniqueness and length
-      const scoreIncrease = response.length > 80 ? 3 : response.length > 40 ? 2 : 1;
-      currentDebate.scores[speakingAI] += scoreIncrease;
-
+      currentDebate.scores[speakingAI] += Math.floor(Math.random() * 3) + 1;
       currentDebate.viewers += Math.floor(Math.random() * 25) - 12;
       currentDebate.viewers = Math.max(800, Math.min(4000, currentDebate.viewers));
 
@@ -320,10 +341,26 @@ function startDebate() {
       });
 
     } catch (error) {
-      console.error('Debate generation error:', error);
+      console.error(`❌ Could not generate AI response for ${speakingAI}:`, error.message);
+      
+      // Add system message about AI failure
+      const errorMessage = {
+        id: Date.now(),
+        ai: 'system',
+        text: `⚠️ ${speakingAI} couldn't connect to AI services - check API keys`,
+        timestamp: new Date().toISOString()
+      };
+      
+      currentDebate.messages.push(errorMessage);
+      broadcast({
+        type: 'new_message',
+        message: errorMessage,
+        scores: currentDebate.scores,
+        viewers: currentDebate.viewers
+      });
     }
 
-  }, 8000 + Math.random() * 4000); // 8-12 seconds for AI processing
+  }, 10000 + Math.random() * 5000); // 10-15 seconds for AI processing
 
   // Topic timer
   const topicTimer = setInterval(() => {
@@ -337,7 +374,7 @@ function startDebate() {
       const systemMessage = {
         id: Date.now(),
         ai: 'system',
-        text: `🔄 New AI debate topic: ${newTopic}`,
+        text: `🔄 New pure AI debate: ${newTopic}`,
         timestamp: new Date().toISOString()
       };
       
@@ -378,7 +415,7 @@ app.get('/api/debate', (req, res) => {
 
 app.post('/api/debate/start', (req, res) => {
   startDebate();
-  res.json({ success: true, message: 'Real AI debate started' });
+  res.json({ success: true, message: 'Pure AI debate started - only real AI responses!' });
 });
 
 app.post('/api/debate/stop', (req, res) => {
@@ -394,35 +431,35 @@ app.post('/api/chat', async (req, res) => {
   }
 
   // Real AI responds to chat
-  if (Math.random() > 0.5) {
-    const respondingAI = Object.keys(AI_PERSONALITIES)[Math.floor(Math.random() * 4)];
-    
-    setTimeout(async () => {
-      try {
-        const chatContext = [{ai: 'viewer', text: message}];
-        const response = await getRealAIResponse(respondingAI, `Responding to viewer: ${message}`, chatContext);
-        
-        const aiMessage = {
-          id: Date.now(),
-          ai: respondingAI,
-          text: `@Chat: ${response}`,
-          timestamp: new Date().toISOString(),
-          reactions: Math.floor(Math.random() * 30) + 20,
-          isResponse: true
-        };
-        
-        currentDebate.messages.push(aiMessage);
-        
-        broadcast({
-          type: 'ai_chat_response',
-          message: aiMessage
-        });
-        
-      } catch (error) {
-        console.error('Chat response error:', error);
-      }
-    }, 3000);
-  }
+  const respondingAI = Object.keys(AI_PERSONALITIES)[Math.floor(Math.random() * 4)];
+  
+  setTimeout(async () => {
+    try {
+      console.log(`💬 ${respondingAI} responding to chat with REAL AI...`);
+      
+      const chatContext = [{ ai: 'viewer', text: message }];
+      const response = await getPureAIResponse(respondingAI, `Viewer says: ${message}`, chatContext);
+      
+      const aiMessage = {
+        id: Date.now(),
+        ai: respondingAI,
+        text: `@Chat: ${response}`,
+        timestamp: new Date().toISOString(),
+        reactions: Math.floor(Math.random() * 30) + 20,
+        isResponse: true
+      };
+      
+      currentDebate.messages.push(aiMessage);
+      
+      broadcast({
+        type: 'ai_chat_response',
+        message: aiMessage
+      });
+      
+    } catch (error) {
+      console.error('Pure AI chat response failed:', error);
+    }
+  }, 2000);
 
   res.json({ success: true });
 });
@@ -432,9 +469,13 @@ app.get('*', (req, res) => {
 });
 
 const server = app.listen(port, () => {
-  console.log(`🚀 REAL AI Debate Arena running on port ${port}`);
-  console.log(`🔑 Hugging Face API: ${process.env.HUGGINGFACE_API_KEY ? 'Connected' : 'Missing'}`);
-  console.log(`🤖 Real AI personalities ready: ${Object.keys(AI_PERSONALITIES).length}`);
+  console.log(`🚀 PURE AI Debate Arena - NO FALLBACKS!`);
+  console.log(`🔑 API Keys Available:`);
+  console.log(`   OpenAI: ${!!process.env.OPENAI_API_KEY}`);
+  console.log(`   Anthropic: ${!!process.env.ANTHROPIC_API_KEY}`);
+  console.log(`   HuggingFace: ${!!process.env.HUGGINGFACE_API_KEY}`);
+  console.log(`   Together: ${!!process.env.TOGETHER_API_KEY}`);
+  console.log(`🤖 Pure AI personalities ready - will only use real AI!`);
 });
 
 server.on('upgrade', (request, socket, head) => {
