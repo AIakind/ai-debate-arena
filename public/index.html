@@ -32,8 +32,11 @@
                     <div class="w-2 h-2 bg-green-500 rounded-full"></div>
                     <span class="text-green-400">Connected</span>
                 </div>
-                <button onclick="startDebate()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-semibold">
+                <button onclick="startDebate()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-semibold" id="startBtn">
                     🎬 Start Debate
+                </button>
+                <button onclick="stopDebate()" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-semibold hidden" id="stopBtn">
+                    ⏹️ Stop Debate
                 </button>
             </div>
         </div>
@@ -208,6 +211,7 @@
                 case 'debate_update':
                     debate = data.debate;
                     updateUI();
+                    updateButtons();
                     break;
                 case 'new_message':
                     if (debate) {
@@ -246,6 +250,11 @@
                         addMessage(data.message);
                     }
                     break;
+                case 'debate_stopped':
+                    debate = data.debate;
+                    updateUI();
+                    updateButtons();
+                    break;
             }
         }
 
@@ -265,6 +274,20 @@
             updateScores();
             updateViewerCount();
             updateMessages();
+            updateButtons();
+        }
+
+        function updateButtons() {
+            const startBtn = document.getElementById('startBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            
+            if (debate && debate.isLive) {
+                startBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+            } else {
+                startBtn.classList.remove('hidden');
+                stopBtn.classList.add('hidden');
+            }
         }
 
         function updateTopic() {
@@ -377,6 +400,13 @@
                 .then(response => response.json())
                 .then(data => console.log('✅ Debate started:', data))
                 .catch(error => console.error('❌ Failed to start debate:', error));
+        }
+
+        function stopDebate() {
+            fetch('/api/debate/stop', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => console.log('✅ Debate stopped:', data))
+                .catch(error => console.error('❌ Failed to stop debate:', error));
         }
 
         function sendChat() {
